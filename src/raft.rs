@@ -1,5 +1,8 @@
 use super::rpc::*;
 use std::error::Error;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::io;
 use std::fmt;
 
@@ -17,7 +20,8 @@ pub struct Raft {
     currentTerm: u32,
     lastLogTerm: u32,
     lastLogIndex: u32,
-
+    servers: HashMap<String, String>,
+    leader: (String, String),
 }
 
 pub struct RequestVateArg {
@@ -99,6 +103,8 @@ impl Raft {
             currentTerm: 0,
             lastLogTerm: 0,
             lastLogIndex: 0,
+            servers: HashMap::new(),
+            leader: ("".to_string(), "".to_string()),
         }
     }
     pub fn get_state(&self) ->(u32, &Raft_state) {
@@ -135,5 +141,26 @@ impl Raft {
             }
         }
         false
-    } 
+    }
+
+    fn handle_reqmsg(&self, reqmsg: Reqmsg) ->Replymsg{
+        Replymsg {
+            ok: false,
+            reply: vec![],
+        }
+
+    }
+    fn add_server(&mut self, servername: String, ip: String) {
+        self.servers.insert(servername, ip);
+    }
+    fn add_service(raft: Arc<Mutex<Raft>>, id: usize) {
+
+        let own = raft.lock().unwrap().server.add_service(id);
+        let raft = Arc::clone(&raft);
+        thread::spawn(move || {
+            let reqmsg = own.receiver.recv().unwrap();
+            let reply = raft.lock().unwrap().handle_reqmsg(reqmsg);
+            own.sender.send(reply).unwrap();
+        });
+    }
 }

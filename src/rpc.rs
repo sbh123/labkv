@@ -16,18 +16,18 @@ pub struct Reqmsg {
 
 #[derive(Debug)]
 pub struct Replymsg {
-    ok: bool,
+    pub ok: bool,
     pub reply: Vec<String>,
 }
 
 pub struct MsgChannel {
-    sender: mpsc::Sender<Reqmsg>,
-    receiver: mpsc::Receiver<Replymsg>,
+    pub sender: mpsc::Sender<Reqmsg>,
+    pub receiver: mpsc::Receiver<Replymsg>,
 }
 
 pub struct OwnChannel {
-    sender: mpsc::Sender<Replymsg>,
-    receiver: mpsc::Receiver<Reqmsg>,
+    pub sender: mpsc::Sender<Replymsg>,
+    pub receiver: mpsc::Receiver<Reqmsg>,
 }
 
 impl Reqmsg {
