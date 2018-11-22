@@ -11,13 +11,13 @@ pub struct Reqmsg {
     endname: String,
     servername: String,
     methodname: String,
-    args: Vec<String>,
+    pub args: Vec<String>,
 }
 
 #[derive(Debug)]
 pub struct Replymsg {
     ok: bool,
-    reply: String,
+    pub reply: Vec<String>,
 }
 
 pub struct MsgChannel {
@@ -40,12 +40,12 @@ impl Reqmsg {
             println!("Append:");
             return Replymsg {
                 ok: true,
-                reply: "Apped finished".to_string(),
+                reply: vec!["Apped finished".to_string()],
             };
         }
         Replymsg {
             ok: true,
-            reply: "".to_string(),
+            reply: vec![],
         }
     }
     pub fn string_to_req(text: String, spilt: u8) ->Reqmsg {
@@ -76,11 +76,13 @@ impl Replymsg {
     }
 
     pub fn string_to_reply(text: String, spilt: u8) ->Replymsg {
+        let mut reply: Vec<String> = Vec::new();
         let mut next  = 0;
         let mut pre  = 0;
         for b in text.bytes() {
             next += 1;
             if  b == spilt {
+                reply.push(text[pre..next -1].to_string());
                 pre = next;
             } else if b == 0 {
                 break;
@@ -88,7 +90,7 @@ impl Replymsg {
         }
         Replymsg {
             ok: text[pre..next -1].to_string().parse().unwrap(),
-            reply: text[..pre-1].to_string(),
+            reply: reply,
         }
     }
 }
@@ -151,7 +153,7 @@ impl ClientEnd {
             Err(_) =>{
                 return (false, Replymsg{
                     ok: false,
-                    reply: "Connect failed".to_string(),
+                    reply: vec!["Connect failed".to_string()],
                 });
             },
         };
@@ -304,7 +306,7 @@ impl Service {
                         println!("Service {} got a job; executing.", id);
                         msgchannel.sender.send(job.reqmsg).unwrap();
                         let reply = msgchannel.receiver.recv().unwrap();
-                        let replymsg = format!("{}\n{}", reply.reply, reply.ok);
+                        let replymsg = format!("{}\n{}", reply.reply[0], reply.ok);
                         job.stream.write(replymsg.as_bytes()).unwrap();
                         job.stream.flush().unwrap();
 
@@ -339,7 +341,7 @@ pub fn test_rpc() {
                     reqmsg.print_req();
                     owner.sender.send(Replymsg {
                         ok: true,
-                        reply: "Reply from server".to_string(),
+                        reply: vec!["Reply from server".to_string()],
                     }).unwrap();
                 }
             });

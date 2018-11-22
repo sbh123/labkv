@@ -1,5 +1,6 @@
 extern crate labkv;
 use labkv::rpc::*;
+use labkv::raft::*;
 
 fn main() {
     println!("Hello, world!");
