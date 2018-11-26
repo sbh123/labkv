@@ -159,7 +159,7 @@ impl Raft {
     }
     fn add_service(raft: Arc<Mutex<Raft>>, id: usize) {
 
-        let own = raft.lock().unwrap().server.add_service("Raft".to_string());
+        let own = raft.lock().unwrap().server.add_service(0);
         let raft = Arc::clone(&raft);
         thread::spawn(move || {
             let reqmsg = own.receiver.recv().unwrap();

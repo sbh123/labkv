@@ -4,17 +4,13 @@ use std::sync::Mutex;
 use std::sync::Arc;
 use std::thread;
 use std::io::prelude::*;
-<<<<<<< HEAD
 use std::fmt;
-=======
-use std::collections::HashMap;
->>>>>>> a367c6d6488c378c88321d74561ab3a28dca14c6
 // use super::config;
 
 #[derive(Debug)]
 pub struct Reqmsg {
     endname: String,
-    servicename: String,
+    servername: String,
     methodname: String,
     pub args: Vec<String>,
 }
@@ -57,7 +53,7 @@ impl Reqmsg {
             println!("Append:");
             return Replymsg {
                 ok: true,
-                reply: vec!["Apped finished".to_string()],
+                reply: vec!["Apped finished".to_arg()],
             };
         }
         Replymsg {
@@ -66,22 +62,6 @@ impl Reqmsg {
         }
     }
     pub fn string_to_req(text: String, spilt: u8) ->Reqmsg {
-        // let mut args: Vec<String> = Vec::new();
-        // let mut next  = 0;
-        // let mut pre  = 0;
-        // for b in text.bytes() {
-        //     next += 1;
-        //     if  b == spilt {
-        //         args.push(text[pre..next-1].to_string());
-        //         pre = next;
-        //     }
-        // }
-        // Reqmsg {
-        //     endname: "client".to_string(),
-        //     servername: "service".to_string(),
-        //     methodname: text[pre..next].to_string(),
-        //     args: args
-        // }
         let max_len = text.len();
         let mut dealt = 0;
         let mut args: Vec<String> = Vec::new();
@@ -107,21 +87,19 @@ impl Replymsg {
         println!("reply: {:?}", self);
     }
 
-    pub fn string_to_reply(text: String, spilt: u8) ->Replymsg {
+    pub fn string_to_reply(text: String) ->Replymsg {
+        let max_len = text.len();
+        let mut dealt = 0;
         let mut reply: Vec<String> = Vec::new();
-        let mut next  = 0;
-        let mut pre  = 0;
-        for b in text.bytes() {
-            next += 1;
-            if  b == spilt {
-                reply.push(text[pre..next -1].to_string());
-                pre = next;
-            } else if b == 0 {
-                break;
-            } 
+        while dealt < max_len {
+            let len: usize = text[dealt..dealt + 10].trim().parse().unwrap();
+            dealt+= 10;
+            reply.push(text[dealt..dealt + len].to_string());
+            dealt += len;
         }
+        let ok = reply.pop().unwrap().parse().unwrap();
         Replymsg {
-            ok: text[pre..next -1].to_string().parse().unwrap(),
+            ok,
             reply: reply,
         }
     }
@@ -143,33 +121,11 @@ pub struct Server {
 fn handle_reply(mut stream: TcpStream) ->Replymsg {
     let mut buffer = [0; 512];
     stream.read(&mut buffer).unwrap();
-    let reply = Replymsg::string_to_reply(String::from_utf8_lossy(&buffer[..]).to_string(), 10);
+    let reply = Replymsg::string_to_reply(String::from_utf8_lossy(&buffer[..]).to_string());
     reply.print_reply();
     reply
 }
 
-// fn handle_req(mut stream: TcpStream, sender: Arc<Mutex<mpsc::Sender<Reqmsg>>>, 
-//     receiver: Arc<Mutex<mpsc::Receiver<Replymsg>>>) {
-//     let mut buffer = [0; 512];
-//     stream.read(&mut buffer).unwrap();
-//     let req = Reqmsg::string_to_req(String::from_utf8_lossy(&buffer[..]).to_string(), 10);
-//     req.print_req();
-//     let sender = sender.lock().unwrap();
-//     sender.send(req).unwrap();
-//     let receiver = receiver.lock().unwrap();
-//     let reply = receiver.recv().unwrap();
-    
-//     // let reply = req.deal_req();
-//     let replymsg = format!("{}\n{}", reply.reply, reply.ok);
-//     stream.write(replymsg.as_bytes()).unwrap();
-//     stream.flush().unwrap();
-// }
-
-// fn get_req(mut stream: TcpStream) -> Reqmsg {
-//     let mut buffer = [0; 512];
-//     stream.read(&mut buffer).unwrap();
-//     Reqmsg::string_to_req(String::from_utf8_lossy(&buffer[..]).to_string(), 10)  
-// }
 
 impl ClientEnd {
     pub fn new(endname: String) -> ClientEnd {
@@ -220,7 +176,7 @@ impl Server {
                 println!("{}", reqmsg);
                 let reqmsg = Reqmsg::string_to_req(reqmsg, 10);
                 let services = services.lock().unwrap();
-                services.execute(reqmsg.servicename.clone(), Job {
+                services.execute(Job {
                     reqmsg,
                     stream,
                 });
@@ -234,11 +190,11 @@ impl Server {
         }
     }
 
-    pub fn add_service(&mut self, name: String) ->OwnChannel {
+    pub fn add_service(&mut self, id: usize) ->OwnChannel {
         let (reqsender, reqreceiver) = mpsc::channel();
         let (replysender, replyreceiver) = mpsc::channel(); 
-        self.services.lock().unwrap().add_service(name, 
-                        MsgChannel{sender: reqsender, receiver: replyreceiver});
+        self.services.lock().unwrap().add_service(id, 
+                MsgChannel{sender: reqsender, receiver: replyreceiver});
         OwnChannel {
             sender: replysender,
             receiver: reqreceiver,
@@ -253,9 +209,8 @@ enum Message {
 
 pub struct ServicePool {
     services: Vec<Service>,
-    senders: HashMap<String, mpsc::Sender<Message>>,
-    // sender: mpsc::Sender<Message>,
-    // receiver: Arc<Mutex<mpsc::Receiver<Message>>>,
+    sender: mpsc::Sender<Message>,
+    receiver: Arc<Mutex<mpsc::Receiver<Message>>>,
 }
 
 trait FnBox {
@@ -278,34 +233,26 @@ impl ServicePool {
     fn new(size: usize) -> ServicePool {
         assert!(size > 0);
 
-        // let receiver = Arc::new(Mutex::new(receiver));
+        let (sender, receiver) = mpsc::channel();
+
+        let receiver = Arc::new(Mutex::new(receiver));
         let services = Vec::new();
         ServicePool {
             services,
-            senders: HashMap::new(),
+            sender,
+            receiver,
         }
     }
 
-    fn add_service(&mut self, name: String, msgchannel: MsgChannel) {
-        let (sender, receiver) = mpsc::channel();
-        self.senders.insert(name.clone(), sender);
-        self.services.push(Service::new(name.clone(), Arc::new(Mutex::new(receiver)), msgchannel));
+    fn add_service(&mut self, id: usize, msgchannel: MsgChannel) {
+        self.services.push(Service::new(id, Arc::clone(&self.receiver), msgchannel));
     }
 
-    fn execute(&self, servicename:String, mut job: Job)
+    fn execute(&self, job: Job)
     {
         // let job = Box::new(job);
-        let sender = self.senders.get(&servicename);
-        let sender = match sender{
-            Some(val) => val,
-            None => {
-                let replymsg = format!("{}\n{}", "No service", false);
-                job.stream.write(replymsg.as_bytes()).unwrap();
-                job.stream.flush().unwrap();
-                return ;
-            }
-        };
-        sender.send(Message::NewJob(job)).unwrap();
+
+        self.sender.send(Message::NewJob(job)).unwrap();
     }
 }
 
@@ -313,14 +260,14 @@ impl Drop for ServicePool {
     fn drop(&mut self) {
         println!("Sending terminate message to all services.");
 
-        for (key, sender) in &self.senders {
-            sender.send(Message::Terminate).unwrap();
+        for _ in &mut self.services {
+            self.sender.send(Message::Terminate).unwrap();
         }
 
         println!("Shutting down all services.");
 
         for service in &mut self.services {
-            println!("Shutting down service {}", service.name);
+            println!("Shutting down service {}", service.id);
 
             if let Some(thread) = service.thread.take() {
                 thread.join().unwrap();
@@ -330,12 +277,12 @@ impl Drop for ServicePool {
 }
 
 struct Service {
-    name: String,
+    id: usize,
     thread: Option<thread::JoinHandle<()>>,
 }
 
 impl Service {
-    fn new(name: String, receiver: Arc<Mutex<mpsc::Receiver<Message>>>, msgchannel: MsgChannel) ->
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Message>>>, msgchannel: MsgChannel) ->
         Service {
 
         let thread = thread::spawn(move ||{
@@ -344,17 +291,16 @@ impl Service {
 
                 match message {
                     Message::NewJob(mut job) => {
-                        // println!("Service {} got a job; executing.", name);
+                        println!("Service {} got a job; executing.", id);
                         msgchannel.sender.send(job.reqmsg).unwrap();
                         let reply = msgchannel.receiver.recv().unwrap();
-                        let replymsg = format!("{}\n{}", reply.reply[0], reply.ok);
+                        let replymsg = format!("{}{}", reply.reply[0], reply.ok);
                         job.stream.write(replymsg.as_bytes()).unwrap();
                         job.stream.flush().unwrap();
-
-        // job.call_box();
                     },
                     Message::Terminate => {
-                        // println!("Service {} was told to terminate.", name);
+                        println!("Service {} was told to terminate.", id);
+
                         break;
                     },
                 }
@@ -362,7 +308,7 @@ impl Service {
         });
 
         Service {
-            name,
+            id,
             thread: Some(thread),
         }
     }
@@ -372,7 +318,8 @@ pub fn test_rpc_server() {
         println!("Test start");
         let mut server = Server::new("server1".to_string(), 8080);
         let mut listens = Vec::new();
-        let owner = server.add_service("Main".to_string());
+        for i in 0..4 {
+            let owner = server.add_service(i);
             // let receiver = owner.receiver;
             let listen_thread = thread::spawn(move || {
                 loop {
@@ -380,11 +327,12 @@ pub fn test_rpc_server() {
                     reqmsg.print_req();
                     owner.sender.send(Replymsg {
                         ok: true,
-                        reply: vec!["Reply from server".to_string()],
+                        reply: vec!["Reply from server".to_arg()],
                     }).unwrap();
                 }
             });
             listens.push(listen_thread);
+        }
         for listen_thread in listens {
             listen_thread.join().unwrap();
         }
@@ -400,12 +348,6 @@ pub fn test_rpc_client() {
     }
 }
 
-pub fn test_reqmsg() {
-    let reqmsg = format!("{}\n{}.{}", 78, "Raft", "Vote");
-    let reqmsg = Reqmsg::string_to_req(reqmsg, 10);
-    reqmsg.print_req();
-
-}
 
 #[cfg(test)]
 mod test {

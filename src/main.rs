@@ -3,7 +3,6 @@ use labkv::rpc::*;
 use labkv::raft::*;
 
 fn main() {
-    test_reqmsg();
     println!("Hello, world!");
     test_rpc_server();
 }
