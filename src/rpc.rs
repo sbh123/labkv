@@ -4,13 +4,17 @@ use std::sync::Mutex;
 use std::sync::Arc;
 use std::thread;
 use std::io::prelude::*;
+<<<<<<< HEAD
 use std::fmt;
+=======
+use std::collections::HashMap;
+>>>>>>> a367c6d6488c378c88321d74561ab3a28dca14c6
 // use super::config;
 
 #[derive(Debug)]
 pub struct Reqmsg {
     endname: String,
-    servername: String,
+    servicename: String,
     methodname: String,
     pub args: Vec<String>,
 }
@@ -216,7 +220,7 @@ impl Server {
                 println!("{}", reqmsg);
                 let reqmsg = Reqmsg::string_to_req(reqmsg, 10);
                 let services = services.lock().unwrap();
-                services.execute(Job {
+                services.execute(reqmsg.servicename.clone(), Job {
                     reqmsg,
                     stream,
                 });
@@ -230,11 +234,11 @@ impl Server {
         }
     }
 
-    pub fn add_service(&mut self, id: usize) ->OwnChannel {
+    pub fn add_service(&mut self, name: String) ->OwnChannel {
         let (reqsender, reqreceiver) = mpsc::channel();
         let (replysender, replyreceiver) = mpsc::channel(); 
-        self.services.lock().unwrap().add_service(id, 
-                MsgChannel{sender: reqsender, receiver: replyreceiver});
+        self.services.lock().unwrap().add_service(name, 
+                        MsgChannel{sender: reqsender, receiver: replyreceiver});
         OwnChannel {
             sender: replysender,
             receiver: reqreceiver,
@@ -249,8 +253,9 @@ enum Message {
 
 pub struct ServicePool {
     services: Vec<Service>,
-    sender: mpsc::Sender<Message>,
-    receiver: Arc<Mutex<mpsc::Receiver<Message>>>,
+    senders: HashMap<String, mpsc::Sender<Message>>,
+    // sender: mpsc::Sender<Message>,
+    // receiver: Arc<Mutex<mpsc::Receiver<Message>>>,
 }
 
 trait FnBox {
@@ -273,26 +278,34 @@ impl ServicePool {
     fn new(size: usize) -> ServicePool {
         assert!(size > 0);
 
-        let (sender, receiver) = mpsc::channel();
-
-        let receiver = Arc::new(Mutex::new(receiver));
+        // let receiver = Arc::new(Mutex::new(receiver));
         let services = Vec::new();
         ServicePool {
             services,
-            sender,
-            receiver,
+            senders: HashMap::new(),
         }
     }
 
-    fn add_service(&mut self, id: usize, msgchannel: MsgChannel) {
-        self.services.push(Service::new(id, Arc::clone(&self.receiver), msgchannel));
+    fn add_service(&mut self, name: String, msgchannel: MsgChannel) {
+        let (sender, receiver) = mpsc::channel();
+        self.senders.insert(name.clone(), sender);
+        self.services.push(Service::new(name.clone(), Arc::new(Mutex::new(receiver)), msgchannel));
     }
 
-    fn execute(&self, job: Job)
+    fn execute(&self, servicename:String, mut job: Job)
     {
         // let job = Box::new(job);
-
-        self.sender.send(Message::NewJob(job)).unwrap();
+        let sender = self.senders.get(&servicename);
+        let sender = match sender{
+            Some(val) => val,
+            None => {
+                let replymsg = format!("{}\n{}", "No service", false);
+                job.stream.write(replymsg.as_bytes()).unwrap();
+                job.stream.flush().unwrap();
+                return ;
+            }
+        };
+        sender.send(Message::NewJob(job)).unwrap();
     }
 }
 
@@ -300,14 +313,14 @@ impl Drop for ServicePool {
     fn drop(&mut self) {
         println!("Sending terminate message to all services.");
 
-        for _ in &mut self.services {
-            self.sender.send(Message::Terminate).unwrap();
+        for (key, sender) in &self.senders {
+            sender.send(Message::Terminate).unwrap();
         }
 
         println!("Shutting down all services.");
 
         for service in &mut self.services {
-            println!("Shutting down service {}", service.id);
+            println!("Shutting down service {}", service.name);
 
             if let Some(thread) = service.thread.take() {
                 thread.join().unwrap();
@@ -317,12 +330,12 @@ impl Drop for ServicePool {
 }
 
 struct Service {
-    id: usize,
+    name: String,
     thread: Option<thread::JoinHandle<()>>,
 }
 
 impl Service {
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Message>>>, msgchannel: MsgChannel) ->
+    fn new(name: String, receiver: Arc<Mutex<mpsc::Receiver<Message>>>, msgchannel: MsgChannel) ->
         Service {
 
         let thread = thread::spawn(move ||{
@@ -331,7 +344,7 @@ impl Service {
 
                 match message {
                     Message::NewJob(mut job) => {
-                        println!("Service {} got a job; executing.", id);
+                        // println!("Service {} got a job; executing.", name);
                         msgchannel.sender.send(job.reqmsg).unwrap();
                         let reply = msgchannel.receiver.recv().unwrap();
                         let replymsg = format!("{}\n{}", reply.reply[0], reply.ok);
@@ -341,8 +354,7 @@ impl Service {
         // job.call_box();
                     },
                     Message::Terminate => {
-                        println!("Service {} was told to terminate.", id);
-
+                        // println!("Service {} was told to terminate.", name);
                         break;
                     },
                 }
@@ -350,7 +362,7 @@ impl Service {
         });
 
         Service {
-            id,
+            name,
             thread: Some(thread),
         }
     }
@@ -360,8 +372,7 @@ pub fn test_rpc_server() {
         println!("Test start");
         let mut server = Server::new("server1".to_string(), 8080);
         let mut listens = Vec::new();
-        for i in 0..4 {
-            let owner = server.add_service(i);
+        let owner = server.add_service("Main".to_string());
             // let receiver = owner.receiver;
             let listen_thread = thread::spawn(move || {
                 loop {
@@ -374,7 +385,6 @@ pub fn test_rpc_server() {
                 }
             });
             listens.push(listen_thread);
-        }
         for listen_thread in listens {
             listen_thread.join().unwrap();
         }
@@ -390,6 +400,12 @@ pub fn test_rpc_client() {
     }
 }
 
+pub fn test_reqmsg() {
+    let reqmsg = format!("{}\n{}.{}", 78, "Raft", "Vote");
+    let reqmsg = Reqmsg::string_to_req(reqmsg, 10);
+    reqmsg.print_req();
+
+}
 
 #[cfg(test)]
 mod test {
