@@ -44,6 +44,7 @@ pub struct Raft {
     currentTerm: u32,
     lastLogTerm: u32,
     lastLogIndex: u32,
+    id: String,
     // election_time: Arc<Mutex<u32>>,
     servers: HashMap<String, String>,
     leader: (String, String),
@@ -120,15 +121,16 @@ impl RequestVateReply {
 }
 
 impl Raft {
-    pub fn new(client: ClientEnd, server: Server, mu: i32) ->Raft {
+    pub fn new(client: ClientEnd, server: Server, id: String, mu: i32) ->Raft {
         Raft {
             client,
             server,
-            mu,
+            mu, 
             state: Raft_state::Follower,
             currentTerm: 0,
             lastLogTerm: 0,
             lastLogIndex: 0,
+            id,
             servers: HashMap::new(),
             leader: ("".to_string(), "".to_string()),
             timeout_listen: None,
@@ -174,7 +176,45 @@ impl Raft {
         false
     }
 
+    pub fn send_vote(&self, servername: String) ->bool {
+        self.sendRequestVote(servername, RequestVateArg {
+            term: self.currentTerm,
+            candidateid: self.id.clone(),
+            lastLogIndex: self.lastLogIndex,
+            lastLogTerm: self.lastLogTerm,
+        })
+    }
+
+    fn handle_vote(&self, reqmsg: Reqmsg) ->Replymsg {
+        let vote_arg = match RequestVateArg::ReqmsgtoVote(reqmsg){
+            Ok(arg) => arg,
+            Err(err) => {
+                return Replymsg {
+                    ok: false,
+                    reply: vec![err.to_arg()],
+                };
+            },
+        };
+        let vote_reply =  self.request_vote(vote_arg);
+        let mut reply = String::new();
+        reply += &vote_reply.voteGrante.to_arg();
+        reply += &vote_reply.term.to_arg();
+        Replymsg {
+            ok: true,
+            reply: vec![reply],
+        }
+    }
+
+    fn hadle_hbmsg(&self, reqmsg: Reqmsg) {
+
+
+    }
+
     fn handle_reqmsg(&self, reqmsg: Reqmsg) ->Replymsg{
+        if reqmsg.methodname == "Vote".to_string() {
+            return self.handle_vote(reqmsg);
+        }
+
         Replymsg {
             ok: false,
             reply: vec![],
@@ -195,20 +235,65 @@ impl Raft {
         });
     }
 
+    fn vote_for_leader(&mut self) ->bool {
+        let mut passed  = 0;
+        for (_ , servername) in &self.servers {
+            if self.send_vote(servername.to_string()) == true {
+                passed += 1;
+            }
+        }
+        if passed > self.servers.len() / 2 {
+            return true;
+        }
+        false
+    }
+    
     fn add_timeout(raft: Arc<Mutex<Raft>>) {
         let receiver = time_count();
+        let raft_clone = Arc::clone(&raft);
         let thread = thread::spawn(move || {
             let timeout = receiver.recv().unwrap();
             if timeout == true {
+                let servers = &raft_clone.lock().unwrap().servers;
+                raft_clone.lock().unwrap().state = Raft_state::Candidate;
+                let mut passed  = 0; 
+                for (_, servername) in servers {
+                    match raft_clone.lock().unwrap().state {
+                        Raft_state::Candidate => {
+                            if raft_clone.lock().unwrap().send_vote(servername.to_string()) == true {
+                                passed += 1;
+                            }
+                        },
+                        _ => {
+                            passed = 0;
+                            break;
+                        }
+                    }
+                }
+                // 超过半数同意
+                if passed >= servers.len() / 2 {
+
+                }
 
             }
         });
         raft.lock().unwrap().timeout_listen = Some(thread);
+    }
+
+    fn reset_timeout(&self) {
+        match self.timeout_listen {
+            Some(ref thread) => {
+                thread.thread().unpark();
+            },
+            None =>{
+                return;
+            },
+        }
     }
 }
 
 pub fn test_raft() {
     let client = ClientEnd::new("client".to_string());
     let server = Server::new("raft".to_string(), 8080);
-    let raft = Raft::new(client, server, 0);
+    let raft = Raft::new(client, server, "127.0.0.1:8080".to_string(), 0);
 }

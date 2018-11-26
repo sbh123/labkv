@@ -11,7 +11,7 @@ use std::fmt;
 pub struct Reqmsg {
     endname: String,
     servername: String,
-    methodname: String,
+    pub methodname: String,
     pub args: Vec<String>,
 }
 
