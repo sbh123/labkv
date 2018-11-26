@@ -36,9 +36,34 @@ pub fn time_count() ->mpsc::Receiver<bool> {
 }
 
 
+pub struct RaftServer {
+    servers: Arc<Mutex<HashMap<String, String>>>,
+    raft: Arc<Mutex<Raft>>,
+}
+
+impl RaftServer {
+    fn new() ->RaftServer {
+        let servers = Arc::new(Mutex::new(HashMap::new()));
+        let client = ClientEnd::new("client".to_string());
+        let server = RpcServer::new("raft".to_string(), 8080);
+        let raft = Raft::new(client, server, "127.0.0.1:8080".to_string(), 0);
+        let raft = Arc::new(Mutex::new(raft));
+        Raft::add_timeout(Arc::clone(&raft));
+        Raft::add_service(Arc::clone(&raft), 0);
+        RaftServer {
+            servers,
+            raft,
+        }
+    }
+
+    fn add_raft_server(&self, serverid: String, serverip: String) {
+        self.servers.lock().unwrap().insert(serverid, serverip);
+    }
+}
+
 pub struct Raft {
     client: ClientEnd,
-    server: Server,
+    server: RpcServer,
     mu: i32,
     state: Raft_state,
     currentTerm: u32,
@@ -121,7 +146,7 @@ impl RequestVateReply {
 }
 
 impl Raft {
-    pub fn new(client: ClientEnd, server: Server, id: String, mu: i32) ->Raft {
+    pub fn new(client: ClientEnd, server: RpcServer, id: String, mu: i32) ->Raft {
         Raft {
             client,
             server,
@@ -224,9 +249,10 @@ impl Raft {
     fn add_server(&mut self, servername: String, ip: String) {
         self.servers.insert(servername, ip);
     }
+
     fn add_service(raft: Arc<Mutex<Raft>>, id: usize) {
 
-        let own = raft.lock().unwrap().server.add_service(0);
+        let own = raft.lock().unwrap().server.add_service(id);
         let raft = Arc::clone(&raft);
         thread::spawn(move || {
             let reqmsg = own.receiver.recv().unwrap();
@@ -252,9 +278,17 @@ impl Raft {
         let receiver = time_count();
         let raft_clone = Arc::clone(&raft);
         let thread = thread::spawn(move || {
+            loop {
             let timeout = receiver.recv().unwrap();
             if timeout == true {
                 let servers = &raft_clone.lock().unwrap().servers;
+                match raft_clone.lock().unwrap().state {
+                    Raft_state::Leader => {
+                       break;
+                    },
+                    _ => {
+                    },
+                }
                 raft_clone.lock().unwrap().state = Raft_state::Candidate;
                 let mut passed  = 0; 
                 for (_, servername) in servers {
@@ -274,7 +308,7 @@ impl Raft {
                 if passed >= servers.len() / 2 {
 
                 }
-
+            }
             }
         });
         raft.lock().unwrap().timeout_listen = Some(thread);
@@ -294,6 +328,6 @@ impl Raft {
 
 pub fn test_raft() {
     let client = ClientEnd::new("client".to_string());
-    let server = Server::new("raft".to_string(), 8080);
+    let server = RpcServer::new("raft".to_string(), 8080);
     let raft = Raft::new(client, server, "127.0.0.1:8080".to_string(), 0);
 }

@@ -112,7 +112,7 @@ pub struct ClientEnd {
     // pub listen_thread: thread::JoinHandle<()>
 }
 
-pub struct Server {
+pub struct RpcServer {
     servername: String,
     services: Arc<Mutex<ServicePool>>,
     pub listen_thread: thread::JoinHandle<()>
@@ -153,9 +153,9 @@ impl ClientEnd {
     }
 }
 
-impl Server {
-    pub fn new(servername: String, port: u32) ->Server{
-    //    , sender: mpsc::Sender<Reqmsg>, receiver: mpsc::Receiver<Replymsg>) ->Server {
+impl RpcServer {
+    pub fn new(servername: String, port: u32) ->RpcServer{
+    //    , sender: mpsc::Sender<Reqmsg>, receiver: mpsc::Receiver<Replymsg>) ->RpcServer {
         let service_pool = Arc::new(Mutex::new(ServicePool::new(4)));
         let services = Arc::clone(&service_pool);
         // let sender = Arc::new(Mutex::new(sender));
@@ -183,7 +183,7 @@ impl Server {
             }
         });
 
-        Server {
+        RpcServer {
             servername,
             services: service_pool,
             listen_thread,
@@ -316,7 +316,7 @@ impl Service {
 
 pub fn test_rpc_server() {
         println!("Test start");
-        let mut server = Server::new("server1".to_string(), 8080);
+        let mut server = RpcServer::new("server1".to_string(), 8080);
         let mut listens = Vec::new();
         for i in 0..4 {
             let owner = server.add_service(i);
