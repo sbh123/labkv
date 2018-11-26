@@ -113,8 +113,8 @@ impl Raft {
         (term, state)
     }
 
-    pub fn requestVote(&self, args: RequestVateArg) ->RequestVateReply {
-        let mut voteGrante;
+    pub fn request_vote(&self, args: RequestVateArg) ->RequestVateReply {
+        let voteGrante;
         if args.term >=  self.currentTerm && args.lastLogTerm >= self.lastLogTerm 
             && args.lastLogIndex >= self.lastLogIndex {
             voteGrante = true;
@@ -128,10 +128,10 @@ impl Raft {
 
     } 
 
-    pub fn sendRequestVote(&self, servername: String, args: RequestVateArg) ->bool {
+    pub fn send_request_vote(&self, servername: String, args: RequestVateArg) ->bool {
         let args = format!("{}\n{}\n{}\n{}", args.term, args.candidateid, 
                 args.lastLogIndex, args.lastLogTerm);
-        let (ok, reply) = self.client.call(servername, "Vote".to_string(), args);
+        let (ok, reply) = self.client.call(servername, "Raft.Vote".to_string(), args);
         if ok ==  false {
             return false;
         }
@@ -155,7 +155,7 @@ impl Raft {
     }
     fn add_service(raft: Arc<Mutex<Raft>>, id: usize) {
 
-        let own = raft.lock().unwrap().server.add_service(id);
+        let own = raft.lock().unwrap().server.add_service("Raft".to_string());
         let raft = Arc::clone(&raft);
         thread::spawn(move || {
             let reqmsg = own.receiver.recv().unwrap();
