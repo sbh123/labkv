@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use std::sync::Arc;
 use std::thread;
 use std::io::prelude::*;
+use std::fmt;
 // use super::config;
 
 #[derive(Debug)]
@@ -30,6 +31,18 @@ pub struct OwnChannel {
     pub receiver: mpsc::Receiver<Reqmsg>,
 }
 
+pub trait String_to_arg {
+    fn to_arg(&self) ->String;
+}
+
+impl<T> String_to_arg for T  
+where T: fmt::Display{
+    fn to_arg(&self) ->String {
+        let arg = format!("{}", self);
+        format!("{0:<0width$}{1}", arg.len(), arg, width = 10)
+    }
+}
+
 impl Reqmsg {
     pub fn print_req(&self) {
         println!("req: {:?}", self);
@@ -49,22 +62,37 @@ impl Reqmsg {
         }
     }
     pub fn string_to_req(text: String, spilt: u8) ->Reqmsg {
+        // let mut args: Vec<String> = Vec::new();
+        // let mut next  = 0;
+        // let mut pre  = 0;
+        // for b in text.bytes() {
+        //     next += 1;
+        //     if  b == spilt {
+        //         args.push(text[pre..next-1].to_string());
+        //         pre = next;
+        //     }
+        // }
+        // Reqmsg {
+        //     endname: "client".to_string(),
+        //     servername: "service".to_string(),
+        //     methodname: text[pre..next].to_string(),
+        //     args: args
+        // }
+        let max_len = text.len();
+        let mut dealt = 0;
         let mut args: Vec<String> = Vec::new();
-        let mut next  = 0;
-        let mut pre  = 0;
-        for b in text.bytes() {
-            next += 1;
-            if  b == spilt {
-                args.push(text[pre..next-1].to_string());
-                pre = next;
-            } else if b == 0{
-                break;
-            }
+        while dealt < max_len {
+            let len: usize = text[dealt..dealt + 10].trim().parse().unwrap();
+            println!("{}", text[dealt..dealt + 10].to_string());
+            dealt+= 10;
+            args.push(text[dealt..dealt + len].to_string());
+            dealt += len;
         }
+        let methodname = args.pop().unwrap();
         Reqmsg {
             endname: "client".to_string(),
             servername: "service".to_string(),
-            methodname: text[pre..next-1].to_string(),
+            methodname,
             args: args
         }
     }
@@ -157,7 +185,7 @@ impl ClientEnd {
                 });
             },
         };
-        let reqmsg = format!("{}\n{}", args, methodname);
+        let reqmsg = format!("{}{}", args, methodname.to_arg());
         stream.write(reqmsg.as_bytes()).unwrap();
         stream.flush().unwrap();
         let reply = handle_reply(stream);
@@ -166,20 +194,27 @@ impl ClientEnd {
 }
 
 impl Server {
-    pub fn new(servername: String) ->Server{
+    pub fn new(servername: String, port: u32) ->Server{
     //    , sender: mpsc::Sender<Reqmsg>, receiver: mpsc::Receiver<Replymsg>) ->Server {
         let service_pool = Arc::new(Mutex::new(ServicePool::new(4)));
         let services = Arc::clone(&service_pool);
         // let sender = Arc::new(Mutex::new(sender));
         // let receiver = Arc::new(Mutex::new(receiver));
         let listen_thread = thread::spawn(move ||{
-            let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
+            let address = format!("127.0.0.1:{}", port);
+            let listener = TcpListener::bind(address).unwrap();
             for stream in listener.incoming() {
                 let mut stream = stream.unwrap();
                 // let 'static handle_req(stream, Arc::clone(&sender), Arc::clone(&receiver));
-                let mut buffer = [0; 512];
-                stream.read(&mut buffer).unwrap();
-                let reqmsg = Reqmsg::string_to_req(String::from_utf8_lossy(&buffer[..]).to_string(), 10);
+                let mut buffer = [0; 4096];
+                let mut reqmsg = String::new();
+                let mut size: usize = 4096;
+                while size == 4096 {
+                    size = stream.read(&mut buffer).unwrap();
+                    reqmsg += &String::from_utf8_lossy(&buffer[..size]);
+                }
+                println!("{}", reqmsg);
+                let reqmsg = Reqmsg::string_to_req(reqmsg, 10);
                 let services = services.lock().unwrap();
                 services.execute(Job {
                     reqmsg,
@@ -242,13 +277,6 @@ impl ServicePool {
 
         let receiver = Arc::new(Mutex::new(receiver));
         let services = Vec::new();
-
-        // let mut services = Vec::with_capacity(size);
-
-        // for id in 0..size {
-        //     services.push(Service::new(id, Arc::clone(&receiver)));
-        // }
-
         ServicePool {
             services,
             sender,
@@ -328,9 +356,9 @@ impl Service {
     }
 }
 
-pub fn test_rpc() {
+pub fn test_rpc_server() {
         println!("Test start");
-        let mut server = Server::new("server1".to_string());
+        let mut server = Server::new("server1".to_string(), 8080);
         let mut listens = Vec::new();
         for i in 0..4 {
             let owner = server.add_service(i);
@@ -350,36 +378,20 @@ pub fn test_rpc() {
         for listen_thread in listens {
             listen_thread.join().unwrap();
         }
-        
-        // {
-        //     client.call("127.0.0.1:8082".to_string(), "Append".to_string(),"hello world".to_string());
-        // }
-        // server.listen_thread.join().unwrap();
-        // server.wait_stop();
-        // client.wait_stop();
-        //thread::sleep(Duration::from_secs(100));
-        // cline
+}
+
+pub fn test_rpc_client() {
+    let client = ClientEnd::new("Client".to_string());
+    for i in 0..10 {
+        let arg = "hello world!";
+        let args = format!("{0:<0width$}{1}", arg.len(), 
+                    arg, width = 10);
+        client.call("127.0.0.1:8080".to_string(), "Append".to_string(), args);
+    }
 }
 
 
 #[cfg(test)]
 mod test {
     use super::*;
-    fn test_tcp_connect() {
-        println!("Test start");
-        let (reqsender, reqreceiver) = mpsc::channel();
-        let (repsender, repreceiver) = mpsc::channel();
-
-        let mut net_work = NetWork::new(repsender, reqreceiver);
-        let client = Rc::new(RefCell::new(ClientEnd::new("clinet1".to_string(),
-                                 reqsender, repreceiver)));
-        let server = Rc::new(RefCell::new(Server::new("server1".to_string())));
-        let service =Rc::new(RefCell::new(Service::new("service1".to_string())));
-        
-        net_work.add_server("server1".to_string(), Rc::clone(&server));
-        net_work.add_client("clinet1".to_string(), Rc::clone(&client));
-        net_work.connect("clinet1".to_string(), "server1".to_string());
-        server.borrow_mut().add_service("service1".to_string(), Rc::clone(&service));
-        client.borrow().call("service1".to_string(), "Append".to_string(), "".to_string());
-    }
 }

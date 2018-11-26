@@ -4,7 +4,7 @@ use labkv::raft::*;
 
 fn main() {
     println!("Hello, world!");
-    test_rpc();
+    test_rpc_server();
 }
 
 // fn test_rpc() {

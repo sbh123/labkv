@@ -129,9 +129,13 @@ impl Raft {
     } 
 
     pub fn sendRequestVote(&self, servername: String, args: RequestVateArg) ->bool {
-        let args = format!("{}\n{}\n{}\n{}", args.term, args.candidateid, 
-                args.lastLogIndex, args.lastLogTerm);
-        let (ok, reply) = self.client.call(servername, "Vote".to_string(), args);
+        // let args = String::new(); 
+        let mut reqargs = String::new();
+        reqargs += &args.term.to_arg();
+        reqargs += &args.candidateid.to_arg();
+        reqargs += &args.lastLogIndex.to_arg();
+        reqargs += &args.lastLogTerm.to_arg();
+        let (ok, reply) = self.client.call(servername, "Vote".to_string(), reqargs);
         if ok ==  false {
             return false;
         }
@@ -163,4 +167,10 @@ impl Raft {
             own.sender.send(reply).unwrap();
         });
     }
+}
+
+pub fn test_raft() {
+    let client = ClientEnd::new("client".to_string());
+    let server = Server::new("raft".to_string(), 8080);
+    let raft = Raft::new(client, server, 0);
 }
