@@ -1,16 +1,40 @@
+extern crate rand;
+use raft::rand::Rng;
+
 use super::rpc::*;
 use std::error::Error;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::io;
 use std::fmt;
+use std::time::{Instant, Duration};
 
 pub enum Raft_state{
     Follower,
     Candidate,
     Leader,
 }
+
+
+pub fn time_count() ->mpsc::Receiver<bool> {
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        loop {
+            let beginning_park = Instant::now();
+            let mut rand_sleep = Duration::from_millis(
+                    rand::thread_rng().gen_range(150, 300));
+            thread::park_timeout(rand_sleep);
+            let elapsed = beginning_park.elapsed();
+            if elapsed >= rand_sleep {
+                sender.send(true).unwrap();
+            }     
+        }
+            
+    });
+    receiver
+}
+
 
 pub struct Raft {
     client: ClientEnd,
@@ -20,8 +44,10 @@ pub struct Raft {
     currentTerm: u32,
     lastLogTerm: u32,
     lastLogIndex: u32,
+    // election_time: Arc<Mutex<u32>>,
     servers: HashMap<String, String>,
     leader: (String, String),
+    timeout_listen: Option<thread::JoinHandle<()>>,
 }
 
 pub struct RequestVateArg {
@@ -105,6 +131,7 @@ impl Raft {
             lastLogIndex: 0,
             servers: HashMap::new(),
             leader: ("".to_string(), "".to_string()),
+            timeout_listen: None,
         }
     }
     pub fn get_state(&self) ->(u32, &Raft_state) {
@@ -166,6 +193,17 @@ impl Raft {
             let reply = raft.lock().unwrap().handle_reqmsg(reqmsg);
             own.sender.send(reply).unwrap();
         });
+    }
+
+    fn add_timeout(raft: Arc<Mutex<Raft>>) {
+        let receiver = time_count();
+        let thread = thread::spawn(move || {
+            let timeout = receiver.recv().unwrap();
+            if timeout == true {
+
+            }
+        });
+        raft.lock().unwrap().timeout_listen = Some(thread);
     }
 }
 
