@@ -31,11 +31,11 @@ pub struct OwnChannel {
     pub receiver: mpsc::Receiver<Reqmsg>,
 }
 
-pub trait String_to_arg {
+pub trait StringToArg {
     fn to_arg(&self) ->String;
 }
 
-impl<T> String_to_arg for T  
+impl<T> StringToArg for T  
 where T: fmt::Display{
     fn to_arg(&self) ->String {
         let arg = format!("{}", self);
@@ -61,7 +61,7 @@ impl Reqmsg {
             reply: vec![],
         }
     }
-    pub fn string_to_req(text: String, spilt: u8) ->Reqmsg {
+    pub fn string_to_req(text: String) ->Reqmsg {
         let max_len = text.len();
         let mut dealt = 0;
         let mut args: Vec<String> = Vec::new();
@@ -134,9 +134,9 @@ impl ClientEnd {
         }
     }
 
-    pub fn call(&self, servername: String, methodname: String, args: String) ->(bool, Replymsg) {
+    pub fn call(&self, serverip: String, methodname: String, args: String) ->(bool, Replymsg) {
         println!("Note: Send a req!");
-        let mut stream = match TcpStream::connect(servername){
+        let mut stream = match TcpStream::connect(serverip){
             Ok(stream) => stream,
             Err(_) =>{
                 return (false, Replymsg{
@@ -154,7 +154,7 @@ impl ClientEnd {
 }
 
 impl RpcServer {
-    pub fn new(servername: String, port: u32) ->RpcServer{
+    pub fn new(servername: String, port: u16) ->RpcServer{
     //    , sender: mpsc::Sender<Reqmsg>, receiver: mpsc::Receiver<Replymsg>) ->RpcServer {
         let service_pool = Arc::new(Mutex::new(ServicePool::new(4)));
         let services = Arc::clone(&service_pool);
@@ -174,7 +174,7 @@ impl RpcServer {
                     reqmsg += &String::from_utf8_lossy(&buffer[..size]);
                 }
                 println!("{}", reqmsg);
-                let reqmsg = Reqmsg::string_to_req(reqmsg, 10);
+                let reqmsg = Reqmsg::string_to_req(reqmsg);
                 let services = services.lock().unwrap();
                 services.execute(Job {
                     reqmsg,
@@ -340,7 +340,7 @@ pub fn test_rpc_server() {
 
 pub fn test_rpc_client() {
     let client = ClientEnd::new("Client".to_string());
-    for i in 0..10 {
+    for _ in 0..10 {
         let arg = "hello world!";
         let args = format!("{0:<0width$}{1}", arg.len(), 
                     arg, width = 10);
