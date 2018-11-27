@@ -47,6 +47,8 @@ pub struct Raft {
     last_logterm: u32,
     last_logindex: u32,
     id: String,
+    raft_logs: Vec<RaftLog>,
+    next_index: HashMap<String, usize>,
     // election_time: Arc<Mutex<u32>>,
     servers: HashMap<String, String>,
     leader: (String, String),
@@ -129,6 +131,8 @@ impl Raft {
             last_logterm: 0,
             last_logindex: 0,
             id,
+            raft_logs: vec![],
+            next_index: HashMap::new(),
             servers: HashMap::new(),
             leader: ("".to_string(), "".to_string()),
             timeout_thread: None,
@@ -216,6 +220,29 @@ impl Raft {
             serverip,
             "Raft.Hbmsg".to_string(),
             hbmsg,
+        );
+    }
+
+    fn send_log(&self, serverip: String, logcount: usize) {
+        let mut logmsg = String::new();
+        let prev_log_index = match self.next_index.get(&serverip) {
+            Some(index) => *index,
+            None => {
+                return ;
+            }
+        };
+        logmsg += &self.current_term.to_arg();
+        logmsg += &self.leader.1.to_arg();
+        logmsg += &prev_log_index.to_arg();
+        logmsg += &self.raft_logs[prev_log_index].term.to_arg();
+        for i in 0..logcount {
+            logmsg += &self.raft_logs[prev_log_index + i].term.to_arg();
+            logmsg += &self.raft_logs[prev_log_index + i].command.to_arg();
+        }
+        self.client.call(
+            serverip,
+            "Raft.Logmsg".to_string(),
+            logmsg,
         );
     }
 
@@ -373,6 +400,41 @@ impl Raft {
             }
         }
     }
+}
+
+pub struct RaftLog {
+    pub term: u32,
+    command: String,
+}
+pub fn find_raft_log(raft_logs: &Vec<RaftLog>, term: u32) ->(usize, usize) {
+    let mut index = raft_logs.len();
+    let (start, end);
+    if index == 0 {
+        return (0, 0);
+    }
+    index -= 1;
+    loop {
+        if raft_logs[index].term == term {
+            end = index;
+            break;
+        }
+        index -= 1;
+        if index == 0 {
+            return (0, 0);
+        } 
+    }
+    loop {
+        if raft_logs[index].term != term {
+            start = index;
+            break;
+        }
+        index -= 1;
+        if index == 0 {
+            start = 0;
+            break;
+        }
+    }
+    (start, end)
 }
 
 pub fn test_raft() {
