@@ -73,6 +73,9 @@ impl Reqmsg {
             dealt += len;
         }
         let methodname = args.pop().unwrap();
+        let methodname: Vec<&str> = methodname.split_terminator('.').collect();
+        let servername = methodname[0].to_string();
+        let methodname = methodname[1].to_string();
         Reqmsg {
             endname: "client".to_string(),
             servername: "service".to_string(),
@@ -294,7 +297,7 @@ impl Service {
                         println!("Service {} got a job; executing.", id);
                         msgchannel.sender.send(job.reqmsg).unwrap();
                         let reply = msgchannel.receiver.recv().unwrap();
-                        let replymsg = format!("{}{}", reply.reply[0], reply.ok);
+                        let replymsg = format!("{}{}", reply.reply[0].to_arg(), reply.ok.to_arg());
                         job.stream.write(replymsg.as_bytes()).unwrap();
                         job.stream.flush().unwrap();
                     },
@@ -344,7 +347,7 @@ pub fn test_rpc_client() {
         let arg = "hello world!";
         let args = format!("{0:<0width$}{1}", arg.len(), 
                     arg, width = 10);
-        client.call("127.0.0.1:8080".to_string(), "Append".to_string(), args);
+        client.call("127.0.0.1:8080".to_string(), "Raft.Append".to_string(), args);
     }
 }
 

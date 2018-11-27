@@ -235,7 +235,7 @@ impl Raft {
         logmsg += &self.leader.1.to_arg();
         logmsg += &prev_log_index.to_arg();
         logmsg += &self.raft_logs[prev_log_index].term.to_arg();
-        for i in 0..logcount {
+        for i in 1..logcount + 1 {
             logmsg += &self.raft_logs[prev_log_index + i].term.to_arg();
             logmsg += &self.raft_logs[prev_log_index + i].command.to_arg();
         }
