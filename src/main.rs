@@ -1,10 +1,11 @@
 extern crate labkv;
 use labkv::rpc::*;
 use labkv::raft::*;
+use labkv::mytest::*;
 
 fn main() {
     println!("Hello, world!");
-    test_rpc_server();
+    test_raft();
 }
 
 // fn test_rpc() {

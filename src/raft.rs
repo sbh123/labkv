@@ -9,6 +9,7 @@ use std::thread;
 use std::io;
 use std::fmt;
 use std::time::{Instant, Duration};
+use std::mem;
 
 pub enum RaftState {
     Follower,
@@ -22,19 +23,19 @@ pub struct RaftServer {
 }
 
 impl RaftServer {
-    fn new(serverip: String, rpcport: u16) -> RaftServer {
+    pub fn new(serverip: String, rpcport: u16) -> RaftServer {
         let servers = Arc::new(Mutex::new(HashMap::new()));
         let client = ClientEnd::new("client".to_string());
         let server = RpcServer::new("raft".to_string(), rpcport);
         let raft = Raft::new(client, server, serverip);
         let raft = Arc::new(Mutex::new(raft));
-        Raft::add_timeout(Arc::clone(&raft));
-        Raft::add_timer(Arc::clone(&raft));
+        Raft::add_timeout(Arc::clone(&raft), Arc::clone(&servers));
+        Raft::add_timer(Arc::clone(&raft), Arc::clone(&servers));
         Raft::add_service(Arc::clone(&raft), 0);
         RaftServer { servers, raft }
     }
 
-    fn add_raft_server(&self, serverid: String, serverip: String) {
+    pub fn add_raft_server(&self, serverid: String, serverip: String) {
         self.servers.lock().unwrap().insert(serverid, serverip);
     }
 }
@@ -216,6 +217,7 @@ impl Raft {
         let mut hbmsg = String::new();
         hbmsg += &self.leader.0.to_arg();
         hbmsg += &self.leader.1.to_arg();
+        hbmsg += &self.current_term.to_arg();
         self.client.call(
             serverip,
             "Raft.Hbmsg".to_string(),
@@ -247,8 +249,11 @@ impl Raft {
     }
 
     fn handle_hbmsg(&mut self, reqmsg: Reqmsg) ->Replymsg {
-        self.reset_timeout();
+        println!("{} recived hbmsg", self.id);
         self.leader = (reqmsg.args[0].to_string(), reqmsg.args[1].to_string());
+        self.state = RaftState::Follower;
+        self.current_term = reqmsg.args[2].parse().unwrap();
+        self.reset_timeout();
         Replymsg {
             ok: true,
             reply: vec!["Reply from hbmsg".to_arg()],
@@ -306,32 +311,38 @@ impl Raft {
         });
     }
 
-    fn add_timeout(raft: Arc<Mutex<Raft>>) {
+    fn add_timeout(raft: Arc<Mutex<Raft>>, servers: Arc<Mutex<HashMap<String, String>>>) {
         let raft_clone = Arc::clone(&raft);
         let thread = thread::spawn(move || {
             loop {
-                match raft.lock().unwrap().state {
-                    RaftState::Leader => {
-                        thread::park();
-                    }
-                    _ => {}
-                }
-                let rand_sleep = Duration::from_millis(rand::thread_rng().gen_range(150, 300));
+                println!("Call time out");
+                let rand_sleep = Duration::from_millis(rand::thread_rng().gen_range(5000, 6000));
                 let beginning_park = Instant::now();
                 thread::park_timeout(rand_sleep);
+                println!("time out");
                 let elapsed = beginning_park.elapsed();
                 if elapsed >= rand_sleep {
-                    let servers = &raft.lock().unwrap().servers;
-                    raft.lock().unwrap().state = RaftState::Candidate;
+                    println!("Real time out");
+                    {
+                        let mut raft = raft.lock().unwrap();
+                        raft.state = RaftState::Candidate;
+                        raft.current_term += 1;
+                        println!("raft locked");
+                    }
+                    println!("Raft change finished");
                     let mut passed = 0;
-                    for (_, serverip) in servers {
-                        match raft.lock().unwrap().state {
+                    let servers = servers.lock().unwrap();
+                    println!("Begin send vote");
+                    for (_, serverip) in servers.iter() {
+                        let raft = raft.lock().unwrap();
+                        match raft.state {
                             RaftState::Candidate => {
-                                if raft.lock().unwrap().send_vote(
-                                    serverip.to_string(),
-                                ) == true
+                                if raft.send_vote(serverip.to_string()) == true
                                 {
                                     passed += 1;
+                                }
+                                else {
+                                    println!("Wait vote for {} failed", serverip);
                                 }
                             }
                             _ => {
@@ -340,35 +351,44 @@ impl Raft {
                             }
                         }
                     }
+                    println!("{} passed", passed);
                     // 超过半数同意
-                    if passed >= servers.len() / 2 {
-                        raft.lock().unwrap().state = RaftState::Leader;
-                        raft.lock().unwrap().timer_start();
+                    if passed + 1 > servers.len() / 2 {
+                        let mut raft = raft.lock().unwrap();
+                        raft.state = RaftState::Leader;
+                        println!("{} become leader term is {}", raft.id,
+                                raft.current_term );
+                        raft.timer_start();
                     }
                 }
             }
         });
         raft_clone.lock().unwrap().timeout_thread = Some(thread);
+        println!("Raft add timeout finished");
     }
 
-    fn add_timer(raft: Arc<Mutex<Raft>>) {
+    fn add_timer(raft: Arc<Mutex<Raft>>, 
+            servers: Arc<Mutex<HashMap<String, String>>>) {
         let raft_clone = Arc::clone(&raft);
         let thread = thread::spawn(move || loop {
-            match raft.lock().unwrap().state {
-                RaftState::Leader => {}
-                _ => {
-                    thread::park();
+            {
+                let raft = raft.lock().unwrap();
+                match raft.state {
+                    RaftState::Leader => {},
+                     _ => {
+                        mem::drop(raft);
+                        thread::park();
+                    }
                 }
             }
             let timer_sleep = Duration::from_millis(100);
             thread::park_timeout(timer_sleep);
-            let servers = &raft.lock().unwrap().servers;
-            for (_, serverip) in servers {
-                match raft.lock().unwrap().state {
+            let servers = servers.lock().unwrap();
+            for (_, serverip) in servers.iter() {
+                let raft = raft.lock().unwrap();
+                match raft.state {
                     RaftState::Leader => {
-                        raft.lock().unwrap().send_hbmsg(
-                            serverip.to_string(),
-                        )
+                        raft.send_hbmsg(serverip.to_string())
                     }
                     _ => {
                         break;
@@ -437,6 +457,3 @@ pub fn find_raft_log(raft_logs: &Vec<RaftLog>, term: u32) ->(usize, usize) {
     (start, end)
 }
 
-pub fn test_raft() {
-    let raftserver = RaftServer::new("127.0.0.1:8080".to_string(), 8080);
-}
