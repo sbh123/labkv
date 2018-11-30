@@ -3,6 +3,7 @@ use std::sync::mpsc;
 use std::sync::Mutex;
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 use std::io::prelude::*;
 use std::fmt;
 // use super::config;
@@ -122,9 +123,15 @@ pub struct RpcServer {
 }
 
 fn handle_reply(mut stream: TcpStream) ->Replymsg {
-    let mut buffer = [0; 512];
-    stream.read(&mut buffer).unwrap();
-    let reply = Replymsg::string_to_reply(String::from_utf8_lossy(&buffer[..]).to_string());
+    let mut buffer = [0; 4096];
+    let mut replymsg = String::new();
+    let mut size: usize = 4096;
+    while size == 4096 {
+        size = stream.read(&mut buffer).unwrap();
+        replymsg += &String::from_utf8_lossy(&buffer[..size]);
+    }
+    println!("reply is: {}", replymsg);
+    let reply = Replymsg::string_to_reply(replymsg);
     reply.print_reply();
     reply
 }
@@ -149,8 +156,11 @@ impl ClientEnd {
             },
         };
         let reqmsg = format!("{}{}", args, methodname.to_arg());
-        stream.write(reqmsg.as_bytes()).unwrap();
+        println!("Call req msg is {}", reqmsg);
+        let size = stream.write(reqmsg.as_bytes()).unwrap();
+        println!("Write {} bytes", size);
         stream.flush().unwrap();
+        thread::sleep(Duration::from_millis(100));
         let reply = handle_reply(stream);
         (true, reply)
     }
@@ -176,7 +186,7 @@ impl RpcServer {
                     size = stream.read(&mut buffer).unwrap();
                     reqmsg += &String::from_utf8_lossy(&buffer[..size]);
                 }
-                println!("{}", reqmsg);
+                println!("recived reqmsg is: {}", reqmsg);
                 let reqmsg = Reqmsg::string_to_req(reqmsg);
                 let services = services.lock().unwrap();
                 services.execute(Job {
@@ -295,9 +305,11 @@ impl Service {
                 match message {
                     Message::NewJob(mut job) => {
                         println!("Service {} got a job; executing.", id);
+                        job.reqmsg.print_req();
                         msgchannel.sender.send(job.reqmsg).unwrap();
+                        println!("ininainvknkn");
                         let reply = msgchannel.receiver.recv().unwrap();
-                        let replymsg = format!("{}{}", reply.reply[0].to_arg(), reply.ok.to_arg());
+                        let replymsg = format!("{}{}", reply.reply[0], reply.ok.to_arg());
                         job.stream.write(replymsg.as_bytes()).unwrap();
                         job.stream.flush().unwrap();
                     },

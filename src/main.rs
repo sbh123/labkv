@@ -1,4 +1,8 @@
 extern crate labkv;
+#[macro_use] extern crate serde_derive;
+extern crate serde;
+extern crate serde_json;
+
 use labkv::rpc::*;
 use labkv::raft::*;
 use labkv::mytest::*;

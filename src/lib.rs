@@ -1,3 +1,5 @@
+#[macro_use]  extern crate serde_derive;
+
 pub mod rpc;
 pub mod raft;
 pub mod mytest;

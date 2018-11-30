@@ -1,4 +1,10 @@
 extern crate rand;
+
+use super::serde_derive;
+
+extern crate serde;
+extern crate serde_json;
+
 use raft::rand::Rng;
 
 use super::rpc::*;
@@ -57,6 +63,7 @@ pub struct Raft {
     timer_thread: Option<thread::JoinHandle<()>>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RequestVateArg {
     term: u32,
     candidateid: String,
@@ -64,6 +71,8 @@ pub struct RequestVateArg {
     last_logterm: u32,
 }
 
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RequestVateReply {
     vote_grante: bool,
     term: u32,
@@ -164,12 +173,18 @@ impl Raft {
 
     pub fn send_request_vote(&self, serverip: String, args: RequestVateArg) -> bool {
         // let args = String::new();
-        let mut reqargs = String::new();
-        reqargs += &args.term.to_arg();
-        reqargs += &args.candidateid.to_arg();
-        reqargs += &args.last_logindex.to_arg();
-        reqargs += &args.last_logterm.to_arg();
-        let (ok, reply) = self.client.call(serverip, "Vote".to_string(), reqargs);
+        // let mut reqargs = String::new();
+        // reqargs += &args.term.to_arg();
+        // reqargs += &args.candidateid.to_arg();
+        // reqargs += &args.last_logindex.to_arg();
+        // reqargs += &args.last_logterm.to_arg();
+        let reqmsg = serde_json::to_string(&args).unwrap();
+        println!("remsg is: {}", reqmsg);
+        let (ok, reply) = self.client.call(
+            serverip,
+            "Raft.Vote".to_string(),
+            reqmsg.to_arg(),
+        );
         if ok == false {
             return false;
         }
@@ -194,7 +209,9 @@ impl Raft {
     }
 
     fn handle_vote(&self, reqmsg: Reqmsg) -> Replymsg {
-        let vote_arg = match RequestVateArg::reqmsg_to_votearg(reqmsg) {
+        println!("args is: {}", reqmsg.args[0]);
+        let vote_arg: RequestVateArg = serde_json::from_str(&reqmsg.args[0]).unwrap();
+        /* let vote_arg = match RequestVateArg::reqmsg_to_votearg(reqmsg) {
             Ok(arg) => arg,
             Err(err) => {
                 return Replymsg {
@@ -202,11 +219,12 @@ impl Raft {
                     reply: vec![err.to_arg()],
                 };
             }
-        };
+        };*/
         let vote_reply = self.request_vote(vote_arg);
         let mut reply = String::new();
         reply += &vote_reply.vote_grante.to_arg();
         reply += &vote_reply.term.to_arg();
+        println!("reply is {}", reply);
         Replymsg {
             ok: true,
             reply: vec![reply],
@@ -218,11 +236,7 @@ impl Raft {
         hbmsg += &self.leader.0.to_arg();
         hbmsg += &self.leader.1.to_arg();
         hbmsg += &self.current_term.to_arg();
-        self.client.call(
-            serverip,
-            "Raft.Hbmsg".to_string(),
-            hbmsg,
-        );
+        self.client.call(serverip, "Raft.Hbmsg".to_string(), hbmsg);
     }
 
     fn send_log(&self, serverip: String, logcount: usize) {
@@ -230,7 +244,7 @@ impl Raft {
         let prev_log_index = match self.next_index.get(&serverip) {
             Some(index) => *index,
             None => {
-                return ;
+                return;
             }
         };
         logmsg += &self.current_term.to_arg();
@@ -248,7 +262,7 @@ impl Raft {
         );
     }
 
-    fn handle_hbmsg(&mut self, reqmsg: Reqmsg) ->Replymsg {
+    fn handle_hbmsg(&mut self, reqmsg: Reqmsg) -> Replymsg {
         println!("{} recived hbmsg", self.id);
         self.leader = (reqmsg.args[0].to_string(), reqmsg.args[1].to_string());
         self.state = RaftState::Follower;
@@ -260,7 +274,7 @@ impl Raft {
         }
     }
 
-    fn handle_addservers(&mut self, mut reqmsg: Reqmsg) ->Replymsg{
+    fn handle_addservers(&mut self, mut reqmsg: Reqmsg) -> Replymsg {
         loop {
             if let Some(serverip) = reqmsg.args.pop() {
                 if let Some(servername) = reqmsg.args.pop() {
@@ -277,6 +291,7 @@ impl Raft {
     }
 
     fn handle_reqmsg(&mut self, reqmsg: Reqmsg) -> Replymsg {
+        println!("Method is {}", reqmsg.methodname);
         if reqmsg.methodname == "Vote".to_string() {
             return self.handle_vote(reqmsg);
         }
@@ -304,8 +319,10 @@ impl Raft {
 
         let own = raft.lock().unwrap().server.add_service(id);
         let raft = Arc::clone(&raft);
-        thread::spawn(move || {
+        thread::spawn(move || loop {
             let reqmsg = own.receiver.recv().unwrap();
+            println!("at service thread");
+            reqmsg.print_req();
             let reply = raft.lock().unwrap().handle_reqmsg(reqmsg);
             own.sender.send(reply).unwrap();
         });
@@ -337,11 +354,9 @@ impl Raft {
                         let raft = raft.lock().unwrap();
                         match raft.state {
                             RaftState::Candidate => {
-                                if raft.send_vote(serverip.to_string()) == true
-                                {
+                                if raft.send_vote(serverip.to_string()) == true {
                                     passed += 1;
-                                }
-                                else {
+                                } else {
                                     println!("Wait vote for {} failed", serverip);
                                 }
                             }
@@ -356,8 +371,7 @@ impl Raft {
                     if passed + 1 > servers.len() / 2 {
                         let mut raft = raft.lock().unwrap();
                         raft.state = RaftState::Leader;
-                        println!("{} become leader term is {}", raft.id,
-                                raft.current_term );
+                        println!("{} become leader term is {}", raft.id, raft.current_term);
                         raft.timer_start();
                     }
                 }
@@ -367,15 +381,14 @@ impl Raft {
         println!("Raft add timeout finished");
     }
 
-    fn add_timer(raft: Arc<Mutex<Raft>>, 
-            servers: Arc<Mutex<HashMap<String, String>>>) {
+    fn add_timer(raft: Arc<Mutex<Raft>>, servers: Arc<Mutex<HashMap<String, String>>>) {
         let raft_clone = Arc::clone(&raft);
         let thread = thread::spawn(move || loop {
             {
                 let raft = raft.lock().unwrap();
                 match raft.state {
-                    RaftState::Leader => {},
-                     _ => {
+                    RaftState::Leader => {}
+                    _ => {
                         mem::drop(raft);
                         thread::park();
                     }
@@ -387,9 +400,7 @@ impl Raft {
             for (_, serverip) in servers.iter() {
                 let raft = raft.lock().unwrap();
                 match raft.state {
-                    RaftState::Leader => {
-                        raft.send_hbmsg(serverip.to_string())
-                    }
+                    RaftState::Leader => raft.send_hbmsg(serverip.to_string()),
                     _ => {
                         break;
                     }
@@ -426,7 +437,7 @@ pub struct RaftLog {
     pub term: u32,
     command: String,
 }
-pub fn find_raft_log(raft_logs: &Vec<RaftLog>, term: u32) ->(usize, usize) {
+pub fn find_raft_log(raft_logs: &Vec<RaftLog>, term: u32) -> (usize, usize) {
     let mut index = raft_logs.len();
     let (start, end);
     if index == 0 {
@@ -441,7 +452,7 @@ pub fn find_raft_log(raft_logs: &Vec<RaftLog>, term: u32) ->(usize, usize) {
         index -= 1;
         if index == 0 {
             return (0, 0);
-        } 
+        }
     }
     loop {
         if raft_logs[index].term != term {
@@ -456,4 +467,3 @@ pub fn find_raft_log(raft_logs: &Vec<RaftLog>, term: u32) ->(usize, usize) {
     }
     (start, end)
 }
-
