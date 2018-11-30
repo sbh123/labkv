@@ -1,4 +1,6 @@
 use super::raft::*;
+use super::pd::*;
+
 use std::time::Duration;
 use std::thread;
 
@@ -19,4 +21,11 @@ pub fn test_raft() {
         thread::sleep(Duration::from_secs(10));
     }
 
+}
+
+pub fn test_pd() {
+    let mut pd = PD::new(8060);
+    if let Some(thread) = pd.worker_thread.take() {
+        thread.join().unwrap();
+    } 
 }
