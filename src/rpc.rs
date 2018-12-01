@@ -93,6 +93,12 @@ impl Replymsg {
 
     pub fn string_to_reply(text: String) ->Replymsg {
         let mut dealt = 0;
+        if text.len < 10 {
+            return Reply {
+                ok: false,
+                reply: "Reply error".to_string();
+            }
+        }
         let len: usize = text[dealt..dealt + 10].trim().parse().unwrap();
         dealt += 10;
         let ok: bool = text[dealt..dealt + len].to_string().parse().unwrap();
