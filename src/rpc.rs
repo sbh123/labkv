@@ -51,6 +51,7 @@ impl Reqmsg {
     pub fn string_to_req(text: String) ->Reqmsg {
         let mut dealt = 0;
         if text.len() < 10 {
+            kv_note!("Recived a Error Req");
             return Reqmsg {
                 servername: "None".to_string(),
                 methodname: "None".to_string(),
@@ -82,12 +83,13 @@ impl Reqmsg {
 
 impl Replymsg {
     pub fn print_reply(&self){
-        println!("reply: {:?}", self);
+        kv_info!("reply: {:?}", self);
     }
 
     pub fn string_to_reply(text: String) ->Replymsg {
         let mut dealt = 0;
         if text.len() < 10 {
+            kv_note!("Recived a Error reply");
             return Replymsg {
                 ok: false,
                 reply: "Reply error".to_string(),
@@ -125,7 +127,7 @@ fn handle_reply(mut stream: TcpStream) ->Replymsg {
         size = stream.read(&mut buffer).unwrap();
         replymsg += &String::from_utf8_lossy(&buffer[..size]);
     }
-    println!("reply is: {}", replymsg);
+    kv_info!("reply is: {}", replymsg);
     let reply = Replymsg::string_to_reply(replymsg);
     reply.print_reply();
     reply
@@ -142,7 +144,7 @@ pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Rep
             },
         };
         let reqmsg = format!("{}{}", methodname.to_arg(), args.to_arg());
-        println!("Call req msg is {}", reqmsg);
+        kv_info!("Call req msg is {}", reqmsg);
         let size = stream.write(reqmsg.as_bytes()).unwrap();
         stream.flush().unwrap();
         thread::sleep(Duration::from_millis(100));
@@ -166,7 +168,7 @@ impl RpcServer {
                     size = stream.read(&mut buffer).unwrap();
                     reqmsg += &String::from_utf8_lossy(&buffer[..size]);
                 }
-                println!("recived reqmsg is: {}", reqmsg);
+                kv_info!("recived reqmsg is: {}", reqmsg);
                 let reqmsg = Reqmsg::string_to_req(reqmsg);
                 let services = services.lock().unwrap();
                 services.execute(Job {
@@ -249,16 +251,16 @@ impl ServicePool {
 
 impl Drop for ServicePool {
     fn drop(&mut self) {
-        println!("Sending terminate message to all services.");
+        kv_info!("Sending terminate message to all services.");
 
         for _ in &mut self.services {
             self.sender.send(Message::Terminate).unwrap();
         }
 
-        println!("Shutting down all services.");
+        kv_info!("Shutting down all services.");
 
         for service in &mut self.services {
-            println!("Shutting down service {}", service.id);
+            kv_info!("Shutting down service {}", service.id);
 
             if let Some(thread) = service.thread.take() {
                 thread.join().unwrap();
@@ -291,7 +293,7 @@ impl Service {
                         job.stream.flush().unwrap();
                     },
                     Message::Terminate => {
-                        println!("Service {} was told to terminate.", id);
+                        kv_info!("Service {} was told to terminate.", id);
 
                         break;
                     },
@@ -307,7 +309,7 @@ impl Service {
 }
 
 pub fn test_rpc_server() {
-        println!("Test start");
+        kv_info!("Test start");
         let mut server = RpcServer::new("server1".to_string(), 8080);
         let mut listens = Vec::new();
         for i in 0..4 {

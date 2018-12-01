@@ -259,11 +259,11 @@ impl Raft {
     }
 
     fn handle_vote(&self, reqmsg: Reqmsg) -> Replymsg {
-        println!("args is: {}", reqmsg.args);
+        kv_info!("args is: {}", reqmsg.args);
         let vote_arg: RequestVateArg = serde_json::from_str(&reqmsg.args).unwrap();
         let vote_reply = self.request_vote(vote_arg);
         let reply = serde_json::to_string(&vote_reply).unwrap();
-        println!("reply is {}", reply);
+        kv_info!("reply is {}", reply);
         Replymsg {
             ok: true,
             reply,
@@ -278,7 +278,7 @@ impl Raft {
     }
 
     fn handle_reqmsg(&mut self, reqmsg: Reqmsg) -> Replymsg {
-        println!("Method is {}", reqmsg.methodname);
+        kv_info!("Method is {}", reqmsg.methodname);
         if reqmsg.methodname == "Vote".to_string() {
             return self.handle_vote(reqmsg);
         }
@@ -307,13 +307,13 @@ impl Raft {
         let raft = Arc::clone(&raft);
         thread::spawn(move || loop {
             let reqmsg = own.receiver.recv().unwrap();
-            println!("at service thread");
+            kv_info!("at service thread");
             reqmsg.print_req();
             let mut raft = raft.lock().unwrap();
-            println!("at raft locked");
+            kv_info!("at raft locked");
             let reply = raft.handle_reqmsg(reqmsg);
             own.sender.send(reply).unwrap();
-            println!("finished listen");
+            kv_info!("finished listen");
         });
     }
 
@@ -334,9 +334,9 @@ impl Raft {
             self.current_term = arg.term;
         }
         // 心跳包
-        println!("call handle append");
+        kv_info!("call handle append");
         if arg.entries.len() == 0 {
-            println!("is a heart beat");
+            kv_debug!("is a heart beat");
             success = true;
         } else if arg.prevLogIndex == self.raft_logs[last_index].index {
             if arg.prevLogTerm == self.raft_logs[last_index].term {
@@ -406,7 +406,7 @@ impl Raft {
         }
         });
         raft_clone.lock().unwrap().timeout_thread = Some(thread);
-        println!("Raft add timeout counter");
+        kv_note!("Raft add timeout counter");
         receiver
     }
     fn add_timeout(raft: Arc<Mutex<Raft>>, servers: Arc<Mutex<HashMap<String, String>>>,
@@ -414,7 +414,7 @@ impl Raft {
         let thread = thread::spawn(move || {
             loop {
                 receiver.recv().unwrap();
-                println!("Begin send vote");
+                kv_debug!("Begin send vote");
                 let servers = servers.lock().unwrap();
                 {
                     let mut raft = raft.lock().unwrap();
@@ -425,7 +425,6 @@ impl Raft {
                     raft.state = RaftState::Candidate;
                     raft.vote_for = raft.id.clone();
                     raft.current_term += 1;
-                    println!("raft locked");
                 }
                 let mut passed = 0;
                 for (_, serverip) in servers.iter() {
@@ -454,14 +453,14 @@ impl Raft {
                         }
                     }
                 }
-                println!("{} passed", passed);
+                kv_debug!("{} passed", passed);
                 // 超过半数同意
                 if passed + 1 > servers.len() / 2 {
                     let mut raft = raft.lock().unwrap();
                     match raft.state {
                         RaftState::Candidate => {
                             raft.state = RaftState::Leader;
-                            println!("{} become leader term is {}", raft.id, raft.current_term);
+                            kv_debug!("{} become leader term is {}", raft.id, raft.current_term);
                             let next_index = raft.last_logindex + 1;
                             for (_, serverip) in servers.iter() {
                                 raft.next_index.insert(serverip.to_string(), next_index);
@@ -474,7 +473,7 @@ impl Raft {
                     let mut raft = raft.lock().unwrap();                    
                     raft.vote_for = "".to_string();
                 }
-                println!("Finished once vote");
+                kv_debug!("Finished once vote");
             }
         });
     }
@@ -494,7 +493,7 @@ impl Raft {
             }
             let timer_sleep = Duration::from_millis(10);
             thread::park_timeout(timer_sleep);
-            println!("Start work");
+            kv_debug!("Start work");
             let servers = servers.lock().unwrap();
             let to_commit; 
             let mut passed = 0;
@@ -543,7 +542,7 @@ impl Raft {
                     raft.commit_index = to_commit;
                 }
             } 
-            println!("finished worker");
+            kv_debug!("finished worker");
         });
         raft_clone.lock().unwrap().timer_thread = Some(thread);
     }

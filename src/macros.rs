@@ -13,3 +13,9 @@ macro_rules! kv_note {
                 format_args!($($arg)*));
     )
 }
+
+#[macro_export]
+macro_rules! kv_info {
+    ($($arg: tt)*) => (
+    )
+}
