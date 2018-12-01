@@ -89,6 +89,7 @@ pub struct RaftServer {
 
 impl RaftServer {
     pub fn new(serverip: String, rpcport: u16) -> RaftServer {
+        let serverid = format!("Raft:{}", rpcport);
         let mut servers: HashMap<String, String>;
         let (ok, reply) = rpc_call("127.0.0.1:8060".to_string(), 
                 "PD.GetServers".to_string(), "".to_string());
@@ -102,7 +103,7 @@ impl RaftServer {
                 servers = serde_json::from_str(&reply.reply).unwrap();
             }
         }
-        servers.remove(&serverip.clone());
+        servers.remove(&serverid);
         let servers = Arc::new(Mutex::new(servers));
         let server = RpcServer::new("raft".to_string(), rpcport);
         let raft = Raft::new(server, serverip.clone());
@@ -112,7 +113,7 @@ impl RaftServer {
         Raft::add_timer(Arc::clone(&raft), Arc::clone(&servers));
         Raft::add_service(Arc::clone(&raft), 0);
         let serverinfo = ServerInfo {
-            serverid: format!("Raft:{}", rpcport),
+            serverid,
             serverip: serverip,
         };
 
