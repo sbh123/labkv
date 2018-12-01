@@ -385,6 +385,11 @@ impl Raft {
         if arg.entries.len() == 0 {
             kv_debug!("is a heart beat");
             success = true;
+            return Append_entry_reply{
+                success,
+                term: self.current_term,
+                last_index: self.last_logindex,
+            };
         } else if arg.prevLogIndex == self.raft_logs[last_index].index {
             if arg.prevLogTerm == self.raft_logs[last_index].term {
                 self.raft_logs.append(&mut arg.entries);
