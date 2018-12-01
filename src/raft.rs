@@ -101,6 +101,50 @@ impl RaftServer {
     pub fn add_raft_server(&self, serverid: String, serverip: String) {
         self.servers.lock().unwrap().insert(serverid, serverip);
     }
+
+    pub fn put_value(&self, key: String, value: String) -> bool {
+        let command = LogCommand {
+            op: 1,
+            key: key.clone(),
+            value: value.clone(),
+        };
+        let mut raft = self.raft.lock().unwrap();
+        let index = raft.last_logindex + 1;
+        let term = raft.current_term;
+        raft.raft_logs.push(RaftLog {
+            term,
+            index,
+            command,
+        });
+        raft.last_logindex += 1;
+        true
+    }
+
+    pub fn get_value(&self, key: String) -> String {
+        self.raft.lock().unwrap().data.get(&key).unwrap().to_string()
+    }
+
+    pub fn delete_value(&self, key: String) -> bool {
+        let value = self.get_value(key.clone());
+        if value == "".to_string() {
+            return false;
+        }
+        let command = LogCommand {
+            op: 2,
+            key: key.clone(),
+            value,
+        };
+        let mut raft = self.raft.lock().unwrap();
+        let index = raft.last_logindex;
+        let term = raft.current_term;
+        raft.raft_logs.push(RaftLog {
+            term,
+            index,
+            command,
+        });
+        true
+    }
+
 }
 
 pub struct Raft {
@@ -120,6 +164,7 @@ pub struct Raft {
     timeout_thread: Option<thread::JoinHandle<()>>,
     timer_thread: Option<thread::JoinHandle<()>>,
     vote_for: String,
+    data: HashMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -206,6 +251,7 @@ impl Raft {
             timeout_thread: None,
             timer_thread: None,
             vote_for: "".to_string(),
+            data: HashMap::new(),
         }
     }
     pub fn get_state(&self) -> (usize, &RaftState) {
@@ -324,6 +370,7 @@ impl Raft {
         // 任期不一致
         self.state = RaftState::Follower;
         self.reset_timeout();
+        let mut last_log_index = self.last_logindex;
         if self.current_term > arg.term {
             return Append_entry_reply{
                 success: false,
@@ -359,6 +406,24 @@ impl Raft {
                 self.last_logindex = arg.prevLogIndex - 1;
             }
         } 
+
+        if success == true{
+            for log in arg.entries {
+                let op = log.command.op;
+                let key = log.command.key;
+                let value = log.command.value;
+                match op{
+                    1 => {
+                        self.data.insert(key, value);
+                    },
+                    2 =>{
+                        self.data.insert(key, "".to_string());
+                    },
+                    _=>{},
+                }
+            }
+            self.commit_index = self.last_logindex;
+        }
         Append_entry_reply{
             success,
             term: self.current_term,
@@ -441,7 +506,7 @@ impl Raft {
                             }
                             let passed = Arc::clone(&passed);
                             let serverip = serverip.to_string();
-                            threads.push(thread::spawn(move || {
+                            threads.push(thread::spawn(move || {  
                             let (ok, reply) = rpc_call(serverip,
                                     "Raft.Vote".to_string(), vote);
                             if ok == false || reply.ok == false { 
@@ -493,7 +558,7 @@ impl Raft {
         let raft_clone = Arc::clone(&raft);
         let thread = thread::spawn(move || loop {
             {
-                let raft = raft.lock().unwrap();
+                let mut raft = raft.lock().unwrap();
                 match raft.state {
                     RaftState::Leader => {}
                     _ => {
@@ -507,11 +572,13 @@ impl Raft {
             kv_debug!("Start work");
             let servers = servers.lock().unwrap();
             let to_commit; 
-            let mut passed = 0;
+            //let mut passed = 0;
+            let passed = Arc::new(Mutex::new(0));
             {
                 let raft = raft.lock().unwrap();
                 to_commit = raft.last_logindex + 1;
             }
+            let mut threads = vec![];
             for (_, serverip) in servers.iter() {
                 let next_index;
                 let state;
@@ -526,31 +593,58 @@ impl Raft {
                             let raft = raft.lock().unwrap();
                             arg = raft.append_log_to_string(next_index - 1, to_commit);
                         }
+                        let passed = Arc::clone(&passed);
+                        let raft = Arc::clone(&raft);
+                        let serverip = serverip.to_string();
+                        threads.push(thread::spawn(move || { 
                         let (ok, reply) = rpc_call(serverip.to_string(), 
                                 "Raft.AppendLog".to_string(), arg);
                         {
-                            if ok == false || reply.ok == false { continue;}
-                            let reply: Append_entry_reply = serde_json::from_str(&reply.reply).unwrap();
-                            if reply.success == false {
-                                let mut raft = raft.lock().unwrap();
-                                if reply.term > raft.current_term {
-                                    raft.current_term = reply.term;
+                            if ok == false || reply.ok == false {
+
+                            }else {
+                                let reply: Append_entry_reply = serde_json::from_str(&reply.reply).unwrap();
+                                if reply.success == false {
+                                    let mut raft = raft.lock().unwrap();
+                                    if reply.term > raft.current_term {
+                                        raft.current_term = reply.term;
+                                    }
+                                    raft.next_index.insert(serverip.to_string(), reply.last_index + 1);
+                                } else {
+                                    //passed += 1;
+                                    *passed.lock().unwrap() += 1;
                                 }
-                                raft.next_index.insert(serverip.to_string(), reply.last_index + 1);
-                            } else {
-                                passed += 1;
-                            }
-                        }
+                            }    
+                        }}));
                     },
                     _ => {
-                        break;
+                        *passed.lock().unwrap() = 0;
                     }
                 }
             }
+            for thread in threads {
+                thread.join().unwrap();   
+            }
+            let passed = *passed.lock().unwrap(); 
             if passed + 1 > servers.len() / 2 {
                 let mut raft = raft.lock().unwrap();
-                if to_commit > raft.commit_index {
-                    raft.commit_index = to_commit;
+                while raft.commit_index < to_commit{
+                    let log = raft.raft_logs[raft.commit_index + 1].clone();
+                    let op = log.command.op;
+                    let key = log.command.key;
+                    let value = log.command.value;
+                    match op{
+                        1 => {
+                            raft.data.insert(key, value);
+                        },
+                        2 => {
+                            raft.data.insert(key, "".to_string());
+                        },
+                        _ =>{
+
+                        },
+                    }
+                    // raft.commit_index += 1;
                 }
             } 
             kv_debug!("finished worker");
