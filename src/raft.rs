@@ -395,7 +395,7 @@ impl Raft {
                 },
                  _ => {},
             }
-            let rand_sleep = Duration::from_millis(rand::thread_rng().gen_range(300, 600));
+            let rand_sleep = Duration::from_millis(rand::thread_rng().gen_range(1500, 3000));
             let beginning_park = Instant::now();
             thread::park_timeout(rand_sleep);
             let elapsed = beginning_park.elapsed();
