@@ -46,7 +46,7 @@ where T: fmt::Display{
 
 impl Reqmsg {
     pub fn print_req(&self) {
-        println!("req: {:?}", self);
+        kv_debug!("req: {:?}", self);
     }
 
     pub fn deal_req(&self) -> Replymsg {

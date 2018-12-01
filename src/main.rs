@@ -3,14 +3,18 @@ extern crate labkv;
 extern crate serde;
 extern crate serde_json;
 
+use std::env;
 use labkv::rpc::*;
 use labkv::raft::*;
 use labkv::mytest::*;
 
 fn main() {
     println!("Hello, world!");
-    test_raft();
+    let args: Vec<String> = env::args().collect();
+
+    test_raft(&args);
 }
+
 
 // fn test_rpc() {
 //         println!("Test start");
