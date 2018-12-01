@@ -106,7 +106,7 @@ impl RaftServer {
         servers.remove(&serverid);
         let servers = Arc::new(Mutex::new(servers));
         let server = RpcServer::new("raft".to_string(), rpcport);
-        let raft = Raft::new(server, serverip.clone());
+        let raft = Raft::new(server, serverid.clone(), serverip.clone());
         let raft = Arc::new(Mutex::new(raft));
         let receiver = Raft::timeout_count(Arc::clone(&raft), 1000, 2000);
         Raft::add_timeout(Arc::clone(&raft), Arc::clone(&servers), receiver);
@@ -116,7 +116,6 @@ impl RaftServer {
             serverid,
             serverip: serverip,
         };
-
         rpc_call("127.0.0.1:8060".to_string(), "PD.AddServers".to_string(), 
                 serde_json::to_string(&serverinfo).unwrap());
         RaftServer { servers, raft }
@@ -181,7 +180,8 @@ pub struct Raft {
     current_term: usize,
     last_logterm: usize,
     last_logindex: usize,
-    id: String,
+    serverid: String,
+    serverip: String,
     raft_logs: Vec<RaftLog>,
     next_index: HashMap<String, usize>,
     // election_time: Arc<Mutex<usize>>,
@@ -253,7 +253,7 @@ impl Error for RaftError {
 }
 
 impl Raft {
-    pub fn new(server: RpcServer, id: String) -> Raft {
+    pub fn new(server: RpcServer, serverid: String, serverip: String) -> Raft {
         let raftlog = RaftLog {
             term: 0,
             index: 0,
@@ -269,7 +269,8 @@ impl Raft {
             current_term: 0,
             last_logterm: 0,
             last_logindex: 0,
-            id,
+            serverid,
+            serverip,
             raft_logs: vec![raftlog],
             next_index: HashMap::new(),
             commit_index: 1,
@@ -325,7 +326,7 @@ impl Raft {
     fn vote_string(&self) ->String {
         let vote = RequestVateArg {
                 term: self.current_term,
-                candidateid: self.id.clone(),
+                candidateid: self.serverip.clone(),
                 last_logindex: self.last_logindex,
                 last_logterm: self.last_logterm,
         };
@@ -375,9 +376,9 @@ impl Raft {
         self.servers.insert(servername, serverip);
     }
 
-    fn add_service(raft: Arc<Mutex<Raft>>, id: usize) {
+    fn add_service(raft: Arc<Mutex<Raft>>, serverip: usize) {
 
-        let own = raft.lock().unwrap().server.add_service(id);
+        let own = raft.lock().unwrap().server.add_service(serverip);
         let raft = Arc::clone(&raft);
         thread::spawn(move || loop {
             let reqmsg = own.receiver.recv().unwrap();
@@ -468,7 +469,7 @@ impl Raft {
                 to_commit: usize) ->String {
         let append_arg = Append_entry_arg {
             term: self.current_term,
-            leaderid: self.id.clone(),
+            leaderid: self.serverip.clone(),
             prevLogIndex: self.raft_logs[prev_index].index,
             prevLogTerm: self.raft_logs[prev_index].term,
             entries: self.raft_logs[prev_index + 1..to_commit].to_vec(),
@@ -521,7 +522,7 @@ impl Raft {
                          _ => {},
                     }
                     raft.state = RaftState::Candidate;
-                    raft.vote_for = raft.id.clone();
+                    raft.vote_for = raft.serverip.clone();
                     raft.current_term += 1;
                 }
                 let passed = Arc::new(Mutex::new(0));
@@ -569,7 +570,15 @@ impl Raft {
                     match raft.state {
                         RaftState::Candidate => {
                             raft.state = RaftState::Leader;
-                            kv_debug!("{} become leader term is {}", raft.id, raft.current_term);
+                            let serverinfo = ServerInfo {
+                                serverid: raft.serverid.clone(),
+                                serverip: raft.serverip.clone(),
+                            };
+                            thread::spawn(move || {
+                                rpc_call("127.0.0.1:8060".to_string(), "PD.SetLeader".to_string(), 
+                                    serde_json::to_string(&serverinfo).unwrap());
+                            });
+                            kv_debug!("{} become leader term is {}", raft.serverip, raft.current_term);
                             let next_index = raft.last_logindex + 1;
                             for (_, serverip) in servers.iter() {
                                 raft.next_index.insert(serverip.to_string(), next_index);
