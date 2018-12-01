@@ -426,7 +426,8 @@ impl Raft {
                     raft.vote_for = raft.id.clone();
                     raft.current_term += 1;
                 }
-                let mut passed = 0;
+                let passed = Arc::new(Mutex::new(0));
+                let mut threads = vec![];
                 for (_, serverip) in servers.iter() {
                     let state;{
                         let raft = raft.lock().unwrap();
@@ -438,21 +439,31 @@ impl Raft {
                                 let raft = raft.lock().unwrap();
                                 vote = raft.vote_string();
                             }
-                            let (ok, reply) = rpc_call(serverip.to_string(),
+                            let passed = Arc::clone(&passed);
+                            let serverip = serverip.to_string();
+                            threads.push(thread::spawn(move || {
+                            let (ok, reply) = rpc_call(serverip,
                                     "Raft.Vote".to_string(), vote);
-                            if ok == false || reply.ok == false { continue;}
-                            let vote_reply: RequestVateReply = 
+                            if ok == false || reply.ok == false { 
+                                // continue;
+                            } else {
+                                let vote_reply: RequestVateReply = 
                                     serde_json::from_str(&reply.reply).unwrap();
-                            if vote_reply.vote_grante == true {
-                                passed += 1;
+                                if vote_reply.vote_grante == true {
+                                    *passed.lock().unwrap() += 1;
+                                }
                             }
+                            }));
                         },
                          _ => {
-                            passed = 0;
-                            break;
-                        }
+                            *passed.lock().unwrap() = 0;
+                        },
                     }
                 }
+                for thread in threads {
+                    thread.join().unwrap();   
+                }
+                let passed = *passed.lock().unwrap();                
                 kv_debug!("{} passed", passed);
                 // 超过半数同意
                 if passed + 1 > servers.len() / 2 {
