@@ -166,6 +166,27 @@ impl ClientEnd {
     }
 }
 
+pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Replymsg) {
+        println!("Note: Send a req!");
+        let mut stream = match TcpStream::connect(serverip){
+            Ok(stream) => stream,
+            Err(_) =>{
+                return (false, Replymsg{
+                    ok: false,
+                    reply: vec!["Connect failed".to_string()],
+                });
+            },
+        };
+        let reqmsg = format!("{}{}", args, methodname.to_arg());
+        println!("Call req msg is {}", reqmsg);
+        let size = stream.write(reqmsg.as_bytes()).unwrap();
+        println!("Write {} bytes", size);
+        stream.flush().unwrap();
+        thread::sleep(Duration::from_millis(100));
+        let reply = handle_reply(stream);
+        (true, reply)
+}
+
 impl RpcServer {
     pub fn new(servername: String, port: u16) ->RpcServer{
     //    , sender: mpsc::Sender<Reqmsg>, receiver: mpsc::Receiver<Replymsg>) ->RpcServer {

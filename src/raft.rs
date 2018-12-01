@@ -24,6 +24,22 @@ pub enum RaftState {
     Leader,
 }
 
+impl Clone for RaftState {
+    fn clone(&self) -> Self {
+        match *self {
+            RaftState::Follower => RaftState::Follower,
+            RaftState::Candidate => RaftState::Candidate,
+            RaftState::Leader => RaftState::Leader,
+            
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        
+    }
+
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LogCommand{
     op: u8,
@@ -252,7 +268,7 @@ impl Raft {
         // reqargs += &args.last_logterm.to_arg();
         let reqmsg = serde_json::to_string(&args).unwrap();
         println!("remsg is: {}", reqmsg);
-        let (ok, reply) = self.client.call(
+        let (ok, reply) = rpc_call(
             serverip,
             "Raft.Vote".to_string(),
             reqmsg.to_arg(),
@@ -266,6 +282,16 @@ impl Raft {
             }
         }
         false
+    }
+
+    fn vote_string(&self) ->String {
+        let vote = RequestVateArg {
+                term: self.current_term,
+                candidateid: self.id.clone(),
+                last_logindex: self.last_logindex,
+                last_logterm: self.last_logterm,
+        };
+        serde_json::to_string(&vote).unwrap()
     }
 
     pub fn send_vote(&self, serverip: String) -> bool {
@@ -283,23 +309,12 @@ impl Raft {
     fn handle_vote(&self, reqmsg: Reqmsg) -> Replymsg {
         println!("args is: {}", reqmsg.args[0]);
         let vote_arg: RequestVateArg = serde_json::from_str(&reqmsg.args[0]).unwrap();
-        /* let vote_arg = match RequestVateArg::reqmsg_to_votearg(reqmsg) {
-            Ok(arg) => arg,
-            Err(err) => {
-                return Replymsg {
-                    ok: false,
-                    reply: vec![err.to_arg()],
-                };
-            }
-        };*/
         let vote_reply = self.request_vote(vote_arg);
-        let mut reply = String::new();
-        reply += &vote_reply.vote_grante.to_arg();
-        reply += &vote_reply.term.to_arg();
+        let reply = serde_json::to_string(&vote_reply).unwrap();
         println!("reply is {}", reply);
         Replymsg {
             ok: true,
-            reply: vec![reply],
+            reply: vec![reply.to_arg()],
         }
     }
 
@@ -308,7 +323,7 @@ impl Raft {
         hbmsg += &self.leader.0.to_arg();
         hbmsg += &self.leader.1.to_arg();
         hbmsg += &self.current_term.to_arg();
-        self.client.call(serverip, "Raft.Hbmsg".to_string(), hbmsg);
+        rpc_call(serverip, "Raft.Hbmsg".to_string(), hbmsg);
     }
 
     fn send_log(&self, serverip: String, logcount: usize) {
@@ -327,7 +342,7 @@ impl Raft {
         //     logmsg += &self.raft_logs[prev_log_index + i].term.to_arg();
         //     logmsg += &self.raft_logs[prev_log_index + i].command.to_arg();
         // }
-        // self.client.call(
+        // rpc_call(
         //     serverip,
         //     "Raft.Logmsg".to_string(),
         //     logmsg,
@@ -460,6 +475,19 @@ impl Raft {
         }
     }
 
+    fn append_log_to_string(&self, prev_index: usize, 
+                to_commit: usize) ->String {
+        let append_arg = Append_entry_arg {
+            term: self.current_term,
+            leaderid: self.id.clone(),
+            prevLogIndex: self.raft_logs[prev_index].index,
+            prevLogTerm: self.raft_logs[prev_index].term,
+            entries: self.raft_logs[prev_index + 1..to_commit].to_vec(),
+            leaderCommit: self.commit_index,
+        };
+        serde_json::to_string(&append_arg).unwrap()
+    }
+
     fn send_append_log(&mut self, serverip: String, prev_index: usize, 
                 to_commit: usize) ->bool { 
         println!("call send append"); 
@@ -472,7 +500,7 @@ impl Raft {
             leaderCommit: self.commit_index,
         };
         let arg = serde_json::to_string(&append_arg).unwrap();
-        let (ok, reply) = self.client.call(serverip.clone(), "Raft.AppendLog".to_string(), arg.to_arg());
+        let (ok, reply) = rpc_call(serverip.clone(), "Raft.AppendLog".to_string(), arg.to_arg());
         if ok == false {
             return false;
         }
@@ -520,15 +548,25 @@ impl Raft {
                     let mut passed = 0;
                     println!("Begin send vote");
                     for (_, serverip) in servers.iter() {
-                        let raft = raft.lock().unwrap();
-                        match raft.state {
+                        let state;{
+                            let raft = raft.lock().unwrap();
+                            state = raft.state.clone();
+                        }
+                        match state {
                             RaftState::Candidate => {
-                                if raft.send_vote(serverip.to_string()) == true {
-                                    passed += 1;
-                                } else {
-                                    println!("Wait vote for {} failed", serverip);
+                                let vote; {
+                                    let raft = raft.lock().unwrap();
+                                    vote = raft.vote_string();
                                 }
-                            }
+                                let (ok, reply) = rpc_call(serverip.to_string(),
+                                    "Raft.Vote".to_string(), vote.to_arg());
+                                if ok == false { continue;}
+                                let vote_reply: RequestVateReply = 
+                                    serde_json::from_str(&reply.reply[0]).unwrap();
+                                if vote_reply.vote_grante == true {
+                                    passed += 1;
+                                }
+                            },
                             _ => {
                                 passed = 0;
                                 break;
@@ -600,21 +638,38 @@ impl Raft {
             thread::park_timeout(timer_sleep);
             println!("Start work");
             let servers = servers.lock().unwrap();
-            let mut to_commit = 0; 
+            let to_commit; 
             {
                 let raft = raft.lock().unwrap();
                 to_commit = raft.last_logindex + 1;
             }
             for (_, serverip) in servers.iter() {
-                let mut next_index = 0;
+                let next_index;
+                let state;
                 {
                     let mut raft = raft.lock().unwrap();
+                    state = raft.state.clone();
                     next_index = *raft.next_index.get(&serverip.to_string()).unwrap();
                 }
-                let mut raft = raft.lock().unwrap();
-                match raft.state {
+                match state {
                     RaftState::Leader => {
-                            raft.send_append_log(serverip.to_string(), next_index - 1, to_commit);
+                        let arg;{
+                            let raft = raft.lock().unwrap();
+                            arg = raft.append_log_to_string(next_index - 1, to_commit);
+                        }
+                        let (ok, reply) = rpc_call(serverip.to_string(), 
+                                "Raft.AppendLog".to_string(), arg.to_arg());
+                        {
+                            if ok == false { continue;}
+                            let reply: Append_entry_reply = serde_json::from_str(&reply.reply[0]).unwrap();
+                            if reply.success == false {
+                                let mut raft = raft.lock().unwrap();
+                                if reply.term > raft.current_term {
+                                    raft.current_term = reply.term;
+                                }
+                                raft.next_index.insert(serverip.to_string(), reply.last_index + 1);
+                            }
+                        }
                     },
                     _ => {
                         break;
