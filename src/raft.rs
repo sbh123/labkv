@@ -114,7 +114,7 @@ impl RaftServer {
             serverid: format!("Raft:{}", rpcport),
             serverip: serverip,
         };
-        rpc_call("127.0.0.1:8060".to_string(), "PD.GetServers".to_string(), 
+        rpc_call("127.0.0.1:8060".to_string(), "PD.AddServers".to_string(), 
                 serde_json::to_string(&serverinfo).unwrap());
         RaftServer { servers, raft }
     }
