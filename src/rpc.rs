@@ -1,9 +1,10 @@
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, SocketAddr};
 use std::sync::mpsc;
 use std::sync::Mutex;
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+// use std::time::Duration;
+use std::time::{Instant, Duration};
 use std::io::prelude::*;
 use std::fmt;
 // use super::config;
@@ -134,18 +135,20 @@ fn handle_reply(mut stream: TcpStream) ->Replymsg {
 }
 
 pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Replymsg) {
+        let timeout = Duration::from_millis(100);
         let beginning_park = Instant::now();
-        let mut stream = match TcpStream::connect(serverip){
+        let socket: SocketAddr = serverip.parse().unwrap();
+        let mut stream = match TcpStream::connect_timeout(&socket, timeout){
             Ok(stream) => stream,
             Err(_) =>{
+                let elapsed = beginning_park.elapsed();
+                kv_info!("Connect cost {:?} {}",elapsed, elapsed.as_secs());
                 return (false, Replymsg{
                     ok: false,
                     reply: "Connect failed".to_string(),
                 });
             },
         };
-        let elapsed = beginning_park.elapsed();
-        kv_debug!("Connect cost {}", elapsed.as_mills());
         let reqmsg = format!("{}{}", methodname.to_arg(), args.to_arg());
         kv_info!("Call req msg is {}", reqmsg);
         let size = stream.write(reqmsg.as_bytes()).unwrap();
