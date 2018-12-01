@@ -10,16 +10,15 @@ use std::fmt;
 
 #[derive(Debug)]
 pub struct Reqmsg {
-    endname: String,
     servername: String,
     pub methodname: String,
-    pub args: Vec<String>,
+    pub args: String,
 }
 
 #[derive(Debug)]
 pub struct Replymsg {
     pub ok: bool,
-    pub reply: Vec<String>,
+    pub reply: String,
 }
 
 pub struct MsgChannel {
@@ -32,7 +31,7 @@ pub struct OwnChannel {
     pub receiver: mpsc::Receiver<Reqmsg>,
 }
 
-pub trait StringToArg {
+trait StringToArg {
     fn to_arg(&self) ->String;
 }
 
@@ -54,35 +53,36 @@ impl Reqmsg {
             println!("Append:");
             return Replymsg {
                 ok: true,
-                reply: vec!["Apped finished".to_arg()],
+                reply: "Apped finished".to_string(),
             };
         }
         Replymsg {
             ok: true,
-            reply: vec![],
+            reply: "".to_string(),
         }
     }
     pub fn string_to_req(text: String) ->Reqmsg {
-        let max_len = text.len();
         let mut dealt = 0;
-        let mut args: Vec<String> = Vec::new();
-        while dealt < max_len {
-            let len: usize = text[dealt..dealt + 10].trim().parse().unwrap();
-            println!("{}", text[dealt..dealt + 10].to_string());
-            dealt+= 10;
-            args.push(text[dealt..dealt + len].to_string());
-            dealt += len;
-        }
-        let methodname = args.pop().unwrap();
+        let len: usize = text[dealt..dealt + 10].trim().parse().unwrap();
+        dealt += 10;
+        let methodname = text[dealt..dealt + len].to_string();
+        dealt += len;
         let methodname: Vec<&str> = methodname.split_terminator('.').collect();
         let servername = methodname[0].to_string();
         let methodname = methodname[1].to_string();
+        let len: usize = text[dealt..dealt + 10].trim().parse().unwrap();
+        dealt += 10;
+        let args = text[dealt..dealt + len].to_string();
         Reqmsg {
-            endname: "client".to_string(),
-            servername: "service".to_string(),
+            servername,
             methodname,
-            args: args
+            args,
         }
+    }
+
+    pub fn to_string(&self) ->String {
+        let methodname = format!("{}.{}", self.servername, self.methodname);
+        format!("{}{}", methodname.to_arg(), self.args.to_arg())
     }
 }
 
@@ -92,28 +92,23 @@ impl Replymsg {
     }
 
     pub fn string_to_reply(text: String) ->Replymsg {
-        let max_len = text.len();
         let mut dealt = 0;
-        let mut reply: Vec<String> = Vec::new();
-        while dealt < max_len {
-            let len: usize = text[dealt..dealt + 10].trim().parse().unwrap();
-            dealt+= 10;
-            reply.push(text[dealt..dealt + len].to_string());
-            dealt += len;
-        }
-        let ok = reply.pop().unwrap().parse().unwrap();
+        let len: usize = text[dealt..dealt + 10].trim().parse().unwrap();
+        dealt += 10;
+        let ok: bool = text[dealt..dealt + len].to_string().parse().unwrap();
+        dealt += len;
+        let len: usize = text[dealt..dealt + 10].trim().parse().unwrap();
+        dealt += 10;
+        let reply = text[dealt..dealt + len].to_string();
         Replymsg {
             ok,
-            reply: reply,
+            reply,
         }
     }
-}
 
-pub struct ClientEnd {
-    endname: String,
-    // sender: mpsc::Sender<Reqmsg>,
-    // receiver: mpsc::Receiver<Replymsg>,
-    // pub listen_thread: thread::JoinHandle<()>
+    pub fn to_string(&self) ->String {
+        format!("{}{}", self.ok.to_arg(), self.reply.to_arg())
+    }
 }
 
 pub struct RpcServer {
@@ -136,51 +131,19 @@ fn handle_reply(mut stream: TcpStream) ->Replymsg {
     reply
 }
 
-
-impl ClientEnd {
-    pub fn new(endname: String) -> ClientEnd {
-        ClientEnd {
-            endname,
-        }
-    }
-
-    pub fn call(&self, serverip: String, methodname: String, args: String) ->(bool, Replymsg) {
-        println!("Note: Send a req!");
-        let mut stream = match TcpStream::connect(serverip){
-            Ok(stream) => stream,
-            Err(_) =>{
-                return (false, Replymsg{
-                    ok: false,
-                    reply: vec!["Connect failed".to_string()],
-                });
-            },
-        };
-        let reqmsg = format!("{}{}", args, methodname.to_arg());
-        println!("Call req msg is {}", reqmsg);
-        let size = stream.write(reqmsg.as_bytes()).unwrap();
-        println!("Write {} bytes", size);
-        stream.flush().unwrap();
-        thread::sleep(Duration::from_millis(100));
-        let reply = handle_reply(stream);
-        (true, reply)
-    }
-}
-
 pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Replymsg) {
-        println!("Note: Send a req!");
         let mut stream = match TcpStream::connect(serverip){
             Ok(stream) => stream,
             Err(_) =>{
                 return (false, Replymsg{
                     ok: false,
-                    reply: vec!["Connect failed".to_string()],
+                    reply: "Connect failed".to_string(),
                 });
             },
         };
-        let reqmsg = format!("{}{}", args, methodname.to_arg());
+        let reqmsg = format!("{}{}", methodname.to_arg(), args.to_arg());
         println!("Call req msg is {}", reqmsg);
         let size = stream.write(reqmsg.as_bytes()).unwrap();
-        println!("Write {} bytes", size);
         stream.flush().unwrap();
         thread::sleep(Duration::from_millis(100));
         let reply = handle_reply(stream);
@@ -189,17 +152,13 @@ pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Rep
 
 impl RpcServer {
     pub fn new(servername: String, port: u16) ->RpcServer{
-    //    , sender: mpsc::Sender<Reqmsg>, receiver: mpsc::Receiver<Replymsg>) ->RpcServer {
         let service_pool = Arc::new(Mutex::new(ServicePool::new(4)));
         let services = Arc::clone(&service_pool);
-        // let sender = Arc::new(Mutex::new(sender));
-        // let receiver = Arc::new(Mutex::new(receiver));
         let listen_thread = thread::spawn(move ||{
             let address = format!("127.0.0.1:{}", port);
             let listener = TcpListener::bind(address).unwrap();
             for stream in listener.incoming() {
                 let mut stream = stream.unwrap();
-                // let 'static handle_req(stream, Arc::clone(&sender), Arc::clone(&receiver));
                 let mut buffer = [0; 4096];
                 let mut reqmsg = String::new();
                 let mut size: usize = 4096;
@@ -284,8 +243,6 @@ impl ServicePool {
 
     fn execute(&self, job: Job)
     {
-        // let job = Box::new(job);
-
         self.sender.send(Message::NewJob(job)).unwrap();
     }
 }
@@ -325,12 +282,11 @@ impl Service {
 
                 match message {
                     Message::NewJob(mut job) => {
-                        println!("Service {} got a job; executing.", id);
                         job.reqmsg.print_req();
                         msgchannel.sender.send(job.reqmsg).unwrap();
-                        println!("ininainvknkn");
                         let reply = msgchannel.receiver.recv().unwrap();
-                        let replymsg = format!("{}{}", reply.reply[0], reply.ok.to_arg());
+                        let replymsg = format!("{}{}", reply.ok.to_arg(), 
+                                    reply.reply.to_arg());
                         job.stream.write(replymsg.as_bytes()).unwrap();
                         job.stream.flush().unwrap();
                     },
@@ -363,7 +319,7 @@ pub fn test_rpc_server() {
                     reqmsg.print_req();
                     owner.sender.send(Replymsg {
                         ok: true,
-                        reply: vec!["Reply from server".to_arg()],
+                        reply: "Reply from server".to_string(),
                     }).unwrap();
                 }
             });
@@ -375,12 +331,11 @@ pub fn test_rpc_server() {
 }
 
 pub fn test_rpc_client() {
-    let client = ClientEnd::new("Client".to_string());
     for _ in 0..10 {
         let arg = "hello world!";
         let args = format!("{0:<0width$}{1}", arg.len(), 
                     arg, width = 10);
-        client.call("127.0.0.1:8080".to_string(), "Raft.Append".to_string(), args);
+        rpc_call("127.0.0.1:8080".to_string(), "Raft.Append".to_string(), args);
     }
 }
 

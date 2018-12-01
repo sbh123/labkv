@@ -28,36 +28,35 @@ impl ServerInfos {
             let replymsg = serde_json::to_string(&self.servers).unwrap();
             return Replymsg {
                 ok: true,
-                reply: vec![replymsg.to_arg()],
+                reply: replymsg,
             };
         } else if reqmsg.methodname == "AddServers".to_string() {
-            let serverinfo: ServerInfo = serde_json::from_str(&reqmsg.args[0]).unwrap();
-            let client = ClientEnd::new("PdClient".to_string());
+            let serverinfo: ServerInfo = serde_json::from_str(&reqmsg.args).unwrap();
             for (_, serverip) in self.servers.iter() {
-                client.call(serverip.to_string(), "Raft.AddServer".to_string(), reqmsg.args[0].to_arg());
+                rpc_call(serverip.to_string(), "Raft.AddServer".to_string(), reqmsg.args.clone());
             }
             self.servers.insert(serverinfo.serverid, serverinfo.serverip);
             return Replymsg {
                 ok: true,
-                reply: vec!["Add server OK".to_arg()],
+                reply: "Add server OK".to_string(),
             };
         } if reqmsg.methodname == "GetLeader".to_string() {
             let replymsg = serde_json::to_string(&self.leader).unwrap();
             return Replymsg {
                 ok: true,
-                reply: vec![replymsg.to_arg()],
+                reply: replymsg,
             };
         } else if reqmsg.methodname == "SetLeader".to_string() {
-            let serverinfo: ServerInfo = serde_json::from_str(&reqmsg.args[0]).unwrap();
+            let serverinfo: ServerInfo = serde_json::from_str(&reqmsg.args).unwrap();
             self.leader = Some(serverinfo);
             return Replymsg {
                 ok: true,
-                reply: vec!["Set leader OK".to_arg()],
+                reply: "Set leader OK".to_string(),
             };
         }
         Replymsg {
             ok: true,
-            reply: vec!["Error method for PD".to_arg()],
+            reply: "Error method for PD".to_string(),
         }
     } 
 }
