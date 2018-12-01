@@ -402,7 +402,7 @@ impl Raft {
                                 }
                                 let (ok, reply) = rpc_call(serverip.to_string(),
                                     "Raft.Vote".to_string(), vote);
-                                if ok == false { continue;}
+                                if ok == false || reply.ok == false { continue;}
                                 let vote_reply: RequestVateReply = 
                                     serde_json::from_str(&reply.reply).unwrap();
                                 if vote_reply.vote_grante == true {
@@ -475,7 +475,7 @@ impl Raft {
                         let (ok, reply) = rpc_call(serverip.to_string(), 
                                 "Raft.AppendLog".to_string(), arg);
                         {
-                            if ok == false { continue;}
+                            if ok == false || reply.ok == false { continue;}
                             let reply: Append_entry_reply = serde_json::from_str(&reply.reply).unwrap();
                             if reply.success == false {
                                 let mut raft = raft.lock().unwrap();
