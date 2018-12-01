@@ -8,6 +8,8 @@ extern crate serde_json;
 use raft::rand::Rng;
 
 use super::rpc::*;
+use super::pd::*;
+
 use std::error::Error;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, mpsc};
@@ -87,14 +89,33 @@ pub struct RaftServer {
 
 impl RaftServer {
     pub fn new(serverip: String, rpcport: u16) -> RaftServer {
-        let servers = Arc::new(Mutex::new(HashMap::new()));
+        let servers: HashMap<String, String>;
+        let (ok, reply) = rpc_call("127.0.0.1:8060".to_string(), 
+                "PD.GetServers".to_string(), "".to_string());
+        if ok == false {
+            servers = HashMap::new();
+        } else {
+            if reply.ok == false {
+                servers = HashMap::new();
+            } else {
+                kv_debug!("PD reply is: {}", reply.reply);
+                servers = serde_json::from_str(&reply.reply).unwrap();
+            }
+        }
+        let servers = Arc::new(Mutex::new(servers));
         let server = RpcServer::new("raft".to_string(), rpcport);
-        let raft = Raft::new(server, serverip);
+        let raft = Raft::new(server, serverip.clone());
         let raft = Arc::new(Mutex::new(raft));
         let receiver = Raft::timeout_count(Arc::clone(&raft), 1000, 2000);
         Raft::add_timeout(Arc::clone(&raft), Arc::clone(&servers), receiver);
         Raft::add_timer(Arc::clone(&raft), Arc::clone(&servers));
         Raft::add_service(Arc::clone(&raft), 0);
+        let serverinfo = ServerInfo {
+            serverid: format!("Raft:{}", rpcport),
+            serverip: serverip,
+        };
+        rpc_call("127.0.0.1:8060".to_string(), "PD.GetServers".to_string(), 
+                serde_json::to_string(&serverinfo).unwrap());
         RaftServer { servers, raft }
     }
 

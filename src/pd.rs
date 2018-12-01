@@ -83,3 +83,8 @@ impl PD {
         self.worker_thread = Some(thread);
     }
 }
+
+pub fn test_pd() {
+    let mut pd = PD::new(8060);
+    pd.run();
+}
