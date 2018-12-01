@@ -244,7 +244,7 @@ impl Raft {
             id,
             raft_logs: vec![raftlog],
             next_index: HashMap::new(),
-            commit_index: 0,
+            commit_index: 1,
             last_applied: 0,
             servers: HashMap::new(),
             leader: ("".to_string(), "".to_string()),
@@ -634,7 +634,7 @@ impl Raft {
             if passed + 1 > servers.len() / 2 {
                 let mut raft = raft.lock().unwrap();
                 while raft.commit_index < to_commit{
-                    let log = raft.raft_logs[raft.commit_index + 1].clone();
+                    let log = raft.raft_logs[raft.commit_index].clone();
                     let op = log.command.op;
                     let key = log.command.key;
                     let value = log.command.value;
@@ -649,7 +649,7 @@ impl Raft {
 
                         },
                     }
-                    // raft.commit_index += 1;
+                    raft.commit_index += 1;
                 }
             } 
             kv_debug!("finished worker");
