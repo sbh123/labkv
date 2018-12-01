@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use std::sync::Arc;
 use std::thread;
 // use std::time::Duration;
-use std::time::{Instant, Duration};
+use std::time::{Duration};
 use std::io::prelude::*;
 use std::fmt;
 // use super::config;
@@ -136,13 +136,10 @@ fn handle_reply(mut stream: TcpStream) ->Replymsg {
 
 pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Replymsg) {
         let timeout = Duration::from_millis(100);
-        let beginning_park = Instant::now();
         let socket: SocketAddr = serverip.parse().unwrap();
         let mut stream = match TcpStream::connect_timeout(&socket, timeout){
             Ok(stream) => stream,
             Err(_) =>{
-                let elapsed = beginning_park.elapsed();
-                kv_info!("Connect cost {:?} {}",elapsed, elapsed.as_secs());
                 return (false, Replymsg{
                     ok: false,
                     reply: "Connect failed".to_string(),
@@ -151,7 +148,7 @@ pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Rep
         };
         let reqmsg = format!("{}{}", methodname.to_arg(), args.to_arg());
         kv_info!("Call req msg is {}", reqmsg);
-        let size = stream.write(reqmsg.as_bytes()).unwrap();
+        stream.write(reqmsg.as_bytes()).unwrap();
         stream.flush().unwrap();
         thread::sleep(Duration::from_millis(100));
         let reply = handle_reply(stream);
@@ -276,12 +273,12 @@ impl Drop for ServicePool {
 }
 
 struct Service {
-    id: usize,
+    // id: usize,
     thread: Option<thread::JoinHandle<()>>,
 }
 
 impl Service {
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Message>>>, msgchannel: MsgChannel) ->
+    fn new(_id: usize, receiver: Arc<Mutex<mpsc::Receiver<Message>>>, msgchannel: MsgChannel) ->
         Service {
 
         let thread = thread::spawn(move ||{
@@ -290,6 +287,7 @@ impl Service {
 
                 match message {
                     Message::NewJob(mut job) => {
+                        kv_info!("Service {} get a job", id);
                         job.reqmsg.print_req();
                         msgchannel.sender.send(job.reqmsg).unwrap();
                         let reply = msgchannel.receiver.recv().unwrap();
@@ -308,7 +306,7 @@ impl Service {
         });
 
         Service {
-            id,
+            // id,
             thread: Some(thread),
         }
     }

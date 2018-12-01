@@ -22,11 +22,10 @@ pub fn test_raft(args: &[String]) {
     let raftserver = RaftServer::new(port.to_string(),port_num);
     
     let mut i: u16 = 1;
-    let mut port_num_other: u16 = 0;
     let mut port_other;
     let mut server;
     while i <= num{
-        port_num_other = 8080 + 2*(i-1);
+        let port_num_other: u16 = 8080 + 2*(i-1);
         if port_num_other != port_num{
             port_other = format!("127.0.0.1:{}", port_num_other);
             server = format!("Raft:{}", port_num_other);

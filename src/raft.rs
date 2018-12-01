@@ -1,6 +1,6 @@
 extern crate rand;
 
-use super::serde_derive;
+//use super::serde_derive;
 
 extern crate serde;
 extern crate serde_json;
@@ -18,7 +18,7 @@ use std::io;
 use std::fmt;
 use std::time::{Instant, Duration};
 use std::mem;
-use std::clone;
+//use std::clone;
 
 pub enum RaftState {
     Follower,
@@ -36,7 +36,7 @@ impl Clone for RaftState {
         }
     }
 
-    fn clone_from(&mut self, source: &Self) {
+    fn clone_from(&mut self, _source: &Self) {
         
     }
 
@@ -63,7 +63,7 @@ impl Clone for LogCommand {
          }
     }
 
-    fn clone_from(&mut self, source: &Self) {
+    fn clone_from(&mut self, _source: &Self) {
         
     }
 
@@ -77,7 +77,7 @@ impl Clone for RaftLog {
         }
     }
     
-    fn clone_from(&mut self, source: &Self) {
+    fn clone_from(&mut self, _source: &Self) {
     }
 
 }
@@ -186,9 +186,9 @@ pub struct Raft {
     next_index: HashMap<String, usize>,
     // election_time: Arc<Mutex<usize>>,
     commit_index: usize,
-    last_applied: usize,
-    servers: HashMap<String, String>,
-    leader: (String, String),
+    //last_applied: usize,
+    //servers: HashMap<String, String>,
+    //leader: (String, String),
     timeout_thread: Option<thread::JoinHandle<()>>,
     timer_thread: Option<thread::JoinHandle<()>>,
     vote_for: String,
@@ -211,18 +211,18 @@ pub struct RequestVateReply {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Append_entry_arg {
+pub struct AppendEntryArg {
     term: usize,
     leaderid: String,
-    prevLogIndex: usize,
-    prevLogTerm: usize,
+    prev_log_index: usize,
+    prev_log_term: usize,
     entries: Vec<RaftLog>,
-    leaderCommit: usize,
+    leader_commit: usize,
 }
 
 //
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Append_entry_reply {
+pub struct AppendEntryReply {
     success: bool,
     term: usize,
     last_index: usize,
@@ -274,9 +274,9 @@ impl Raft {
             raft_logs: vec![raftlog],
             next_index: HashMap::new(),
             commit_index: 1,
-            last_applied: 0,
-            servers: HashMap::new(),
-            leader: ("".to_string(), "".to_string()),
+            //last_applied: 0,
+            //servers: HashMap::new(),
+            //leader: ("".to_string(), "".to_string()),
             timeout_thread: None,
             timer_thread: None,
             vote_for: "".to_string(),
@@ -345,12 +345,12 @@ impl Raft {
         }
     }
 
-    fn handle_addservers(&mut self, mut reqmsg: Reqmsg) -> Replymsg {
-        Replymsg {
-            ok: true,
-            reply: "Reply from addserver".to_string(),
-        }
-    }
+    // fn handle_addservers(&mut self, mut reqmsg: Reqmsg) -> Replymsg {
+    //     Replymsg {
+    //         ok: true,
+    //         reply: "Reply from addserver".to_string(),
+    //     }
+    // }
 
     fn handle_reqmsg(&mut self, reqmsg: Reqmsg) -> Replymsg {
         kv_info!("Method is {}", reqmsg.methodname);
@@ -372,9 +372,9 @@ impl Raft {
         }
 
     }
-    fn add_server(&mut self, servername: String, serverip: String) {
-        self.servers.insert(servername, serverip);
-    }
+    // fn add_server(&mut self, servername: String, serverip: String) {
+    //     self.servers.insert(servername, serverip);
+    // }
 
     fn add_service(raft: Arc<Mutex<Raft>>, serverip: usize) {
 
@@ -392,16 +392,16 @@ impl Raft {
         });
     }
 
-    fn handle_append_log(&mut self, reqmsg: Reqmsg) ->Append_entry_reply {
-        let mut arg: Append_entry_arg = serde_json::from_str(&reqmsg.args).unwrap();
+    fn handle_append_log(&mut self, reqmsg: Reqmsg) ->AppendEntryReply {
+        let mut arg: AppendEntryArg = serde_json::from_str(&reqmsg.args).unwrap();
         let last_index = self.raft_logs.len() - 1;
         let mut success = false;
-        // 任期不一致
+        // 任期不一致//
         self.state = RaftState::Follower;
         self.reset_timeout();
-        let mut last_log_index = self.last_logindex;
+        
         if self.current_term > arg.term {
-            return Append_entry_reply{
+            return AppendEntryReply{
                 success: false,
                 term: self.current_term,
                 last_index: self.last_logindex,
@@ -414,30 +414,30 @@ impl Raft {
         if arg.entries.len() == 0 {
             kv_debug!("is a heart beat");
             success = true;
-            return Append_entry_reply{
+            return AppendEntryReply{
                 success,
                 term: self.current_term,
                 last_index: self.last_logindex,
             };
-        } else if arg.prevLogIndex == self.raft_logs[last_index].index {
-            if arg.prevLogTerm == self.raft_logs[last_index].term {
+        } else if arg.prev_log_index == self.raft_logs[last_index].index {
+            if arg.prev_log_term == self.raft_logs[last_index].term {
                 self.raft_logs.append(&mut arg.entries);
                 self.last_logindex += arg.entries.len();
                 success = true;
             } else {
-                self.raft_logs.truncate(arg.prevLogIndex);
-                self.last_logindex = arg.prevLogIndex - 1;
+                self.raft_logs.truncate(arg.prev_log_index);
+                self.last_logindex = arg.prev_log_index - 1;
             }
-        } else if arg.prevLogIndex < self.raft_logs[last_index].index {
-            if self.raft_logs[arg.prevLogIndex].term == arg.prevLogTerm {
-                self.raft_logs.truncate(arg.prevLogIndex + 1);
-                self.last_logindex = arg.prevLogIndex;
+        } else if arg.prev_log_index < self.raft_logs[last_index].index {
+            if self.raft_logs[arg.prev_log_index].term == arg.prev_log_term {
+                self.raft_logs.truncate(arg.prev_log_index + 1);
+                self.last_logindex = arg.prev_log_index;
                 self.raft_logs.append(&mut arg.entries);
                 self.last_logindex += arg.entries.len();
                 success = true;
             } else {
-                self.raft_logs.truncate(arg.prevLogIndex);
-                self.last_logindex = arg.prevLogIndex - 1;
+                self.raft_logs.truncate(arg.prev_log_index);
+                self.last_logindex = arg.prev_log_index - 1;
             }
         } 
 
@@ -458,7 +458,7 @@ impl Raft {
             }
             self.commit_index = self.last_logindex;
         }
-        Append_entry_reply{
+        AppendEntryReply{
             success,
             term: self.current_term,
             last_index: self.last_logindex,
@@ -467,18 +467,18 @@ impl Raft {
 
     fn append_log_to_string(&self, prev_index: usize, 
                 to_commit: usize) ->String {
-        let append_arg = Append_entry_arg {
+        let append_arg = AppendEntryArg {
             term: self.current_term,
             leaderid: self.serverip.clone(),
-            prevLogIndex: self.raft_logs[prev_index].index,
-            prevLogTerm: self.raft_logs[prev_index].term,
+            prev_log_index: self.raft_logs[prev_index].index,
+            prev_log_term: self.raft_logs[prev_index].term,
             entries: self.raft_logs[prev_index + 1..to_commit].to_vec(),
-            leaderCommit: self.commit_index,
+            leader_commit: self.commit_index,
         };
         serde_json::to_string(&append_arg).unwrap()
     }
 
-    fn timeout_count(raft: Arc<Mutex<Raft>>, start: u32, end: u32) 
+    fn timeout_count(raft: Arc<Mutex<Raft>>, start: u64, end: u64) 
             ->mpsc::Receiver<u32> {
         let (sender, receiver) = mpsc::channel();
         let raft_clone = Arc::clone(&raft);
@@ -494,7 +494,7 @@ impl Raft {
                 },
                  _ => {},
             }
-            let rand_sleep = Duration::from_millis(rand::thread_rng().gen_range(1500, 3000));
+            let rand_sleep = Duration::from_millis(rand::thread_rng().gen_range(start, end));
             let beginning_park = Instant::now();
             thread::park_timeout(rand_sleep);
             let elapsed = beginning_park.elapsed();
@@ -510,7 +510,7 @@ impl Raft {
     }
     fn add_timeout(raft: Arc<Mutex<Raft>>, servers: Arc<Mutex<HashMap<String, String>>>,
                     receiver: mpsc::Receiver<u32>) {
-        let thread = thread::spawn(move || {
+        thread::spawn(move || {
             loop {
                 receiver.recv().unwrap();
                 kv_debug!("Begin send vote");
@@ -600,7 +600,7 @@ impl Raft {
         let raft_clone = Arc::clone(&raft);
         let thread = thread::spawn(move || loop {
             {
-                let mut raft = raft.lock().unwrap();
+                let raft = raft.lock().unwrap();
                 match raft.state {
                     RaftState::Leader => {}
                     _ => {
@@ -645,7 +645,7 @@ impl Raft {
                             if ok == false || reply.ok == false {
 
                             }else {
-                                let reply: Append_entry_reply = serde_json::from_str(&reply.reply).unwrap();
+                                let reply: AppendEntryReply = serde_json::from_str(&reply.reply).unwrap();
                                 if reply.success == false {
                                     let mut raft = raft.lock().unwrap();
                                     if reply.term > raft.current_term {
