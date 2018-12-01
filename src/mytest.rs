@@ -35,6 +35,7 @@ pub fn test_raft(args: &[String]) {
         }
         i = i + 1;
     }
+    raftserver.show_servers();
     loop {
         thread::sleep(Duration::from_secs(10));
     }

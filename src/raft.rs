@@ -121,6 +121,10 @@ impl RaftServer {
         RaftServer { servers, raft }
     }
 
+    pub fn show_servers(&self) {
+        kv_debug!("{:?}", self.servers.lock().unwrap());
+    }
+
     pub fn add_raft_server(&self, serverid: String, serverip: String) {
         self.servers.lock().unwrap().insert(serverid, serverip);
     }
