@@ -29,7 +29,7 @@ pub fn test_raft(args: &[String]) {
         port_num_other = 8080 + 2*(i-1);
         if port_num_other != port_num{
             port_other = format!("127.0.0.1:{}", port_num_other);
-            server = format!("server{}", i);
+            server = format!("Raft:{}", port_num_other);
             raftserver.add_raft_server(server.to_string(), 
                                port_other.to_string());
         }
