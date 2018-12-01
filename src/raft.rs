@@ -217,9 +217,17 @@ impl Raft {
     pub fn request_vote(&self, args: RequestVateArg) -> RequestVateReply {
         let vote_grante;
         self.reset_timeout();
-        if args.term >= self.current_term && args.last_logterm >= self.last_logterm &&
-            args.last_logindex >= self.last_logindex
+        if args.term < self.current_term {
+            vote_grante = false;
+        }
+        else if args.last_logindex >= self.last_logindex
         {
+            // if self.vote_for == "".to_string() || self.vote_for == args.candidateid {
+            //     self.vote_for = args.candidateid;
+            //     vote_grante = true;
+            // } else {
+            //     vote_grante = false;
+            // }
             vote_grante = true;
         } else {
             vote_grante = false;
@@ -377,10 +385,9 @@ impl Raft {
                 },
                  _ => {},
             }
-            let rand_sleep = Duration::from_millis(rand::thread_rng().gen_range(5000, 6000));
+            let rand_sleep = Duration::from_millis(rand::thread_rng().gen_range(3000, 6000));
             let beginning_park = Instant::now();
             thread::park_timeout(rand_sleep);
-            println!("time out");
             let elapsed = beginning_park.elapsed();
             if elapsed >= rand_sleep {
                 kv_debug!("Real time out");
@@ -397,6 +404,7 @@ impl Raft {
         let thread = thread::spawn(move || {
             loop {
                 receiver.recv().unwrap();
+                println!("Begin send vote");
                 let servers = servers.lock().unwrap();
                 {
                     let mut raft = raft.lock().unwrap();
@@ -410,7 +418,6 @@ impl Raft {
                     println!("raft locked");
                 }
                 let mut passed = 0;
-                println!("Begin send vote");
                 for (_, serverip) in servers.iter() {
                     let state;{
                         let raft = raft.lock().unwrap();
@@ -441,13 +448,18 @@ impl Raft {
                 // 超过半数同意
                 if passed + 1 > servers.len() / 2 {
                     let mut raft = raft.lock().unwrap();
-                    raft.state = RaftState::Leader;
-                    println!("{} become leader term is {}", raft.id, raft.current_term);
-                    let next_index = raft.last_logindex + 1;
-                    for (_, serverip) in servers.iter() {
-                        raft.next_index.insert(serverip.to_string(), next_index);
+                    match raft.state {
+                        RaftState::Candidate => {
+                            raft.state = RaftState::Leader;
+                            println!("{} become leader term is {}", raft.id, raft.current_term);
+                            let next_index = raft.last_logindex + 1;
+                            for (_, serverip) in servers.iter() {
+                                raft.next_index.insert(serverip.to_string(), next_index);
+                            }
+                            raft.timer_start();
+                        },
+                        _ =>{},
                     }
-                    raft.timer_start();
                 } else {
                     let mut raft = raft.lock().unwrap();                    
                     raft.vote_for = "".to_string();
