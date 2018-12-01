@@ -91,7 +91,8 @@ impl RaftServer {
         let server = RpcServer::new("raft".to_string(), rpcport);
         let raft = Raft::new(server, serverip);
         let raft = Arc::new(Mutex::new(raft));
-        Raft::add_timeout(Arc::clone(&raft), Arc::clone(&servers));
+        let receiver = Raft::timeout_count(Arc::clone(&raft), 1000, 2000);
+        Raft::add_timeout(Arc::clone(&raft), Arc::clone(&servers), receiver);
         Raft::add_timer(Arc::clone(&raft), Arc::clone(&servers));
         Raft::add_service(Arc::clone(&raft), 0);
         RaftServer { servers, raft }
@@ -300,6 +301,7 @@ impl Raft {
         let last_index = self.raft_logs.len() - 1;
         let mut success = false;
         // 任期不一致
+        self.state = RaftState::Follower;
         self.reset_timeout();
         if self.current_term > arg.term {
             return Append_entry_reply{
@@ -309,7 +311,6 @@ impl Raft {
             };
         } else {
             self.current_term = arg.term;
-            self.state = RaftState::Follower;
         }
         // 心跳包
         println!("call handle append");
@@ -357,82 +358,92 @@ impl Raft {
         serde_json::to_string(&append_arg).unwrap()
     }
 
-    fn add_timeout(raft: Arc<Mutex<Raft>>, servers: Arc<Mutex<HashMap<String, String>>>) {
+    fn timeout_count(raft: Arc<Mutex<Raft>>, start: u32, end: u32) 
+            ->mpsc::Receiver<u32> {
+        let (sender, receiver) = mpsc::channel();
         let raft_clone = Arc::clone(&raft);
         let thread = thread::spawn(move || {
-            loop {
-                {
+        loop {
+            let state; {
                 let raft = raft.lock().unwrap();
-                    match raft.state {
-                        RaftState::Leader => {
-                            mem::drop(raft);
-                            thread::park();
-                        }
-                        _ => {
-                        }
-                    }
-                }
-                let rand_sleep = Duration::from_millis(rand::thread_rng().gen_range(5000, 6000));
-                let beginning_park = Instant::now();
-                thread::park_timeout(rand_sleep);
-                println!("time out");
-                let elapsed = beginning_park.elapsed();
-                if elapsed >= rand_sleep {
-                    let servers = servers.lock().unwrap();
-                    println!("Real time out");
-                    {
-                        let mut raft = raft.lock().unwrap();
-                        raft.state = RaftState::Candidate;
-                        raft.current_term += 1;
-                        println!("raft locked");
-                    }
-                    println!("Raft change finished");
-                    let mut passed = 0;
-                    println!("Begin send vote");
-                    for (_, serverip) in servers.iter() {
-                        let state;{
-                            let raft = raft.lock().unwrap();
-                            state = raft.state.clone();
-                        }
-                        match state {
-                            RaftState::Candidate => {
-                                let vote; {
-                                    let raft = raft.lock().unwrap();
-                                    vote = raft.vote_string();
-                                }
-                                let (ok, reply) = rpc_call(serverip.to_string(),
-                                    "Raft.Vote".to_string(), vote);
-                                if ok == false || reply.ok == false { continue;}
-                                let vote_reply: RequestVateReply = 
-                                    serde_json::from_str(&reply.reply).unwrap();
-                                if vote_reply.vote_grante == true {
-                                    passed += 1;
-                                }
-                            },
-                            _ => {
-                                passed = 0;
-                                break;
-                            }
-                        }
-                    }
-                    println!("{} passed", passed);
-                    // 超过半数同意
-                    if passed + 1 > servers.len() / 2 {
-                        let mut raft = raft.lock().unwrap();
-                        raft.state = RaftState::Leader;
-                        println!("{} become leader term is {}", raft.id, raft.current_term);
-                        let next_index = raft.last_logindex + 1;
-                        for (_, serverip) in servers.iter() {
-                            raft.next_index.insert(serverip.to_string(), next_index);
-                        }
-                        raft.timer_start();
-                    }
-                }
-                println!("finished timeout");
+                state = raft.state.clone();
             }
+            match state{
+                RaftState::Leader => {
+                    thread::park();
+                },
+                 _ => {},
+            }
+            let rand_sleep = Duration::from_millis(rand::thread_rng().gen_range(5000, 6000));
+            let beginning_park = Instant::now();
+            thread::park_timeout(rand_sleep);
+            println!("time out");
+            let elapsed = beginning_park.elapsed();
+            if elapsed >= rand_sleep {
+                kv_debug!("Real time out");
+                sender.send(1).unwrap();
+            }
+        }
         });
         raft_clone.lock().unwrap().timeout_thread = Some(thread);
-        println!("Raft add timeout finished");
+        println!("Raft add timeout counter");
+        receiver
+    }
+    fn add_timeout(raft: Arc<Mutex<Raft>>, servers: Arc<Mutex<HashMap<String, String>>>,
+                    receiver: mpsc::Receiver<u32>) {
+        let thread = thread::spawn(move || {
+            loop {
+                receiver.recv().unwrap();
+                let servers = servers.lock().unwrap();
+                {
+                    let mut raft = raft.lock().unwrap();
+                    raft.state = RaftState::Candidate;
+                    raft.current_term += 1;
+                    println!("raft locked");
+                }
+                let mut passed = 0;
+                println!("Begin send vote");
+                for (_, serverip) in servers.iter() {
+                    let state;{
+                        let raft = raft.lock().unwrap();
+                        state = raft.state.clone();
+                    }
+                    match state {
+                        RaftState::Candidate => {
+                            let vote; {
+                                let raft = raft.lock().unwrap();
+                                vote = raft.vote_string();
+                            }
+                            let (ok, reply) = rpc_call(serverip.to_string(),
+                                    "Raft.Vote".to_string(), vote);
+                            if ok == false || reply.ok == false { continue;}
+                            let vote_reply: RequestVateReply = 
+                                    serde_json::from_str(&reply.reply).unwrap();
+                            if vote_reply.vote_grante == true {
+                                passed += 1;
+                            }
+                        },
+                         _ => {
+                            passed = 0;
+                            break;
+                        }
+                    }
+                }
+                println!("{} passed", passed);
+                // 超过半数同意
+                if passed + 1 > servers.len() / 2 {
+                    let mut raft = raft.lock().unwrap();
+                    raft.state = RaftState::Leader;
+                    println!("{} become leader term is {}", raft.id, raft.current_term);
+                    let next_index = raft.last_logindex + 1;
+                    for (_, serverip) in servers.iter() {
+                        raft.next_index.insert(serverip.to_string(), next_index);
+                    }
+                    raft.timer_start();
+                }
+                println!("Finished once vote");
+            }
+        });
     }
 
     fn add_timer(raft: Arc<Mutex<Raft>>, servers: Arc<Mutex<HashMap<String, String>>>) {
