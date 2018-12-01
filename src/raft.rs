@@ -119,6 +119,7 @@ pub struct Raft {
     leader: (String, String),
     timeout_thread: Option<thread::JoinHandle<()>>,
     timer_thread: Option<thread::JoinHandle<()>>,
+    vote_for: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -204,6 +205,7 @@ impl Raft {
             leader: ("".to_string(), "".to_string()),
             timeout_thread: None,
             timer_thread: None,
+            vote_for: "".to_string(),
         }
     }
     pub fn get_state(&self) -> (usize, &RaftState) {
@@ -214,6 +216,7 @@ impl Raft {
 
     pub fn request_vote(&self, args: RequestVateArg) -> RequestVateReply {
         let vote_grante;
+        self.reset_timeout();
         if args.term >= self.current_term && args.last_logterm >= self.last_logterm &&
             args.last_logindex >= self.last_logindex
         {
@@ -402,6 +405,7 @@ impl Raft {
                          _ => {},
                     }
                     raft.state = RaftState::Candidate;
+                    raft.vote_for = raft.id.clone();
                     raft.current_term += 1;
                     println!("raft locked");
                 }
@@ -444,6 +448,9 @@ impl Raft {
                         raft.next_index.insert(serverip.to_string(), next_index);
                     }
                     raft.timer_start();
+                } else {
+                    let mut raft = raft.lock().unwrap();                    
+                    raft.vote_for = "".to_string();
                 }
                 println!("Finished once vote");
             }
