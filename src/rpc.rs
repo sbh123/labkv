@@ -134,6 +134,7 @@ fn handle_reply(mut stream: TcpStream) ->Replymsg {
 }
 
 pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Replymsg) {
+        let beginning_park = Instant::now();
         let mut stream = match TcpStream::connect(serverip){
             Ok(stream) => stream,
             Err(_) =>{
@@ -143,6 +144,8 @@ pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Rep
                 });
             },
         };
+        let elapsed = beginning_park.elapsed();
+        kv_debug!("Connect cost {}", elapsed.as_mills());
         let reqmsg = format!("{}{}", methodname.to_arg(), args.to_arg());
         kv_info!("Call req msg is {}", reqmsg);
         let size = stream.write(reqmsg.as_bytes()).unwrap();
