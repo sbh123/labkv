@@ -217,6 +217,16 @@ impl Raft {
     pub fn request_vote(&self, args: RequestVateArg) -> RequestVateReply {
         let vote_grante;
         self.reset_timeout();
+        match self.state {
+            RaftState::Leader => {
+                vote_grante = false;
+                return RequestVateReply {
+                    vote_grante,
+                    term: self.current_term,
+                };
+            },
+            _ => {},
+        }
         if args.term < self.current_term {
             vote_grante = false;
         }
