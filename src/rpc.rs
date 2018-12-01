@@ -48,21 +48,15 @@ impl Reqmsg {
         kv_debug!("req: {:?}", self);
     }
 
-    pub fn deal_req(&self) -> Replymsg {
-        if self.methodname == "Append".to_string() {
-            println!("Append:");
-            return Replymsg {
-                ok: true,
-                reply: "Apped finished".to_string(),
-            };
-        }
-        Replymsg {
-            ok: true,
-            reply: "".to_string(),
-        }
-    }
     pub fn string_to_req(text: String) ->Reqmsg {
         let mut dealt = 0;
+        if text.len() < 10 {
+            return Reqmsg {
+                servername: "None".to_string(),
+                methodname: "None".to_string(),
+                args: "None".to_string(),
+            };
+        }
         let len: usize = text[dealt..dealt + 10].trim().parse().unwrap();
         dealt += 10;
         let methodname = text[dealt..dealt + len].to_string();
@@ -93,11 +87,11 @@ impl Replymsg {
 
     pub fn string_to_reply(text: String) ->Replymsg {
         let mut dealt = 0;
-        if text.len < 10 {
-            return Reply {
+        if text.len() < 10 {
+            return Replymsg {
                 ok: false,
-                reply: "Reply error".to_string();
-            }
+                reply: "Reply error".to_string(),
+            };
         }
         let len: usize = text[dealt..dealt + 10].trim().parse().unwrap();
         dealt += 10;
