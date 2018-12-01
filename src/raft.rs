@@ -397,6 +397,10 @@ impl Raft {
                 let servers = servers.lock().unwrap();
                 {
                     let mut raft = raft.lock().unwrap();
+                    match raft.state {
+                         RaftState::Leader => continue,
+                         _ => {},
+                    }
                     raft.state = RaftState::Candidate;
                     raft.current_term += 1;
                     println!("raft locked");
