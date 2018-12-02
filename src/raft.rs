@@ -115,7 +115,7 @@ impl RaftServer {
         let server = RpcServer::new("raft".to_string(), rpcport);
         let raft = Raft::new(server, serverid.clone(), serverip.clone());
         let raft = Arc::new(Mutex::new(raft));
-        let receiver = Raft::timeout_count(Arc::clone(&raft), 1000, 2000);
+        let receiver = Raft::timeout_count(Arc::clone(&raft), 1000, 4000);
         Raft::add_timeout(Arc::clone(&raft), Arc::clone(&servers), receiver);
         Raft::add_timer(Arc::clone(&raft), Arc::clone(&servers));
         Raft::add_service(Arc::clone(&raft), 0, Arc::clone(&servers));
