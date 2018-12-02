@@ -169,6 +169,7 @@ impl RpcServer {
         let services = Arc::clone(&service_pool);
         let listen_thread = thread::spawn(move ||{
             let address = format!("127.0.0.1:{}", port);
+            println!("bind {} finished", address);
             let listener = TcpListener::bind(address).unwrap();
             for stream in listener.incoming() {
                 let mut stream = stream.unwrap();
