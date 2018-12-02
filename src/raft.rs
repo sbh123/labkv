@@ -396,10 +396,11 @@ impl Raft {
 
                 } else {
                     servers.lock().unwrap().insert(
-                        serverinfo.serverid, serverinfo.serverip);
+                        serverinfo.serverid, serverinfo.serverip.clone());
                     let mut raft = raft.lock().unwrap();
                     let next_index = raft.last_logindex + 1;
-                    raft.next_index.insert(serverip.to_string(), next_index);
+                    raft.next_index.insert(
+                        serverinfo.serverip.to_string(), next_index);
                 }
                 reply = Replymsg {
                     ok: true,
@@ -636,6 +637,16 @@ impl Raft {
             thread::park_timeout(timer_sleep);
             kv_debug!("Start work");
             let servers = servers.lock().unwrap();
+            kv_debug!("Servers count is {}", servers.len());
+            for (serverid, serverip) in servers.iter() {
+                kv_debug!("[{}]:{}", serverid, serverip);
+            }
+            {
+                let raft = raft.lock().unwrap();
+                for (serverip, next) in raft.next_index.iter() {
+                    kv_debug!("[{}]:{}", serverip, next);
+                }
+            }
             let to_commit; 
             //let mut passed = 0;
             let passed = Arc::new(Mutex::new(0));
