@@ -58,7 +58,7 @@ impl KvServer {
                 };
                 
                 if ready == "OK".to_string() {
-                    let res = self.raftnote.put_value(put_args.key.clone(),put_args.value.clone());
+                    let _res = self.raftnote.put_value(put_args.key.clone(),put_args.value.clone());
                 }  else if ready == String::from("WrongLeader") {
                     put_reply.wrong_leader = true;
                 } else {}
