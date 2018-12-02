@@ -461,7 +461,7 @@ impl Raft {
                 self.last_logindex += arg.entries.len();
                 kv_debug!("Last log index is {}:{}",
                     self.last_logindex, arg.entries.len());
-                self.raft_logs.append(&mut arg.entries);
+                self.raft_logs.append(&mut arg.entries.clone());
                 success = true;
             } else {
                 self.raft_logs.truncate(arg.prev_log_index);
@@ -476,7 +476,8 @@ impl Raft {
                 self.last_logindex += arg.entries.len();
                 kv_debug!("Last log index is {}:{}",
                     self.last_logindex, arg.entries.len());
-                self.raft_logs.append(&mut arg.entries);
+                self.raft_logs.append(&mut arg.entries.clone());
+
                 success = true;
             } else {
                 self.raft_logs.truncate(arg.prev_log_index);
