@@ -456,12 +456,12 @@ impl Raft {
             };
         } else if arg.prev_log_index == self.raft_logs[last_index].index {
             if arg.prev_log_term == self.raft_logs[last_index].term {
-                self.raft_logs.append(&mut arg.entries);
                 kv_debug!("Last log index is {}:{}",
                     self.last_logindex, arg.entries.len());
                 self.last_logindex += arg.entries.len();
                 kv_debug!("Last log index is {}:{}",
                     self.last_logindex, arg.entries.len());
+                self.raft_logs.append(&mut arg.entries);
                 success = true;
             } else {
                 self.raft_logs.truncate(arg.prev_log_index);
@@ -471,12 +471,12 @@ impl Raft {
             if self.raft_logs[arg.prev_log_index].term == arg.prev_log_term {
                 self.raft_logs.truncate(arg.prev_log_index + 1);
                 self.last_logindex = arg.prev_log_index;
-                self.raft_logs.append(&mut arg.entries);
                 kv_debug!("Last log index is {}:{}",
                     self.last_logindex, arg.entries.len());
                 self.last_logindex += arg.entries.len();
                 kv_debug!("Last log index is {}:{}",
                     self.last_logindex, arg.entries.len());
+                self.raft_logs.append(&mut arg.entries);
                 success = true;
             } else {
                 self.raft_logs.truncate(arg.prev_log_index);
