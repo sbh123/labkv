@@ -111,7 +111,7 @@ impl RaftServer {
         let receiver = Raft::timeout_count(Arc::clone(&raft), 1000, 2000);
         Raft::add_timeout(Arc::clone(&raft), Arc::clone(&servers), receiver);
         Raft::add_timer(Arc::clone(&raft), Arc::clone(&servers));
-        Raft::add_service(Arc::clone(&raft), 0);
+        Raft::add_service(Arc::clone(&raft), 0, Arc::clone(&servers));
         let serverinfo = ServerInfo {
             serverid,
             serverip: serverip,
@@ -376,7 +376,8 @@ impl Raft {
     //     self.servers.insert(servername, serverip);
     // }
 
-    fn add_service(raft: Arc<Mutex<Raft>>, serverip: usize) {
+    fn add_service(raft: Arc<Mutex<Raft>>, serverip: usize, 
+                servers: Arc<Mutex<HashMap<String, String>>>) {
 
         let own = raft.lock().unwrap().server.add_service(serverip);
         let raft = Arc::clone(&raft);
@@ -384,9 +385,28 @@ impl Raft {
             let reqmsg = own.receiver.recv().unwrap();
             kv_info!("at service thread");
             reqmsg.print_req();
-            let mut raft = raft.lock().unwrap();
-            kv_info!("at raft locked");
-            let reply = raft.handle_reqmsg(reqmsg);
+            let reply;
+            if reqmsg.methodname == "AddServer".to_string() {
+                let serverinfo: ServerInfo = serde_json::from_str(&reqmsg.args).unwrap();
+                let localid;{
+                    let raft = raft.lock().unwrap();
+                    localid = raft.serverid.clone();
+                }
+                if serverinfo.serverid == localid {
+
+                } else {
+                    servers.lock().unwrap().insert(
+                        serverinfo.serverid, serverinfo.serverip);
+                }
+                reply = Replymsg {
+                    ok: true,
+                    reply: "Add server finished".to_string(),
+                }
+            } else  {
+                let mut raft = raft.lock().unwrap();
+                kv_info!("at raft locked");
+                reply = raft.handle_reqmsg(reqmsg);
+            }
             own.sender.send(reply).unwrap();
             kv_info!("finished listen");
         });
