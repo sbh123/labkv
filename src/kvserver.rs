@@ -20,20 +20,20 @@ impl KvServer {
         }
     }
 
-    pub fn StartCommand(&mut self,ClientId: Uuid,Seq:& i32) -> String {
+    pub fn start_command(&mut self,id: Uuid,seq:& i32) -> String {
         if self.raftnote.is_leader() == false {
             return String::from("WrongLeader");
         } else {
-            let mut clientseqs = self.clientseqs.clone();
-            let reu = clientseqs.get(&ClientId).clone();
+            let clientseqs = self.clientseqs.clone();
+            let reu = clientseqs.get(&id).clone();
             match reu {
                 None => {
-                    self.clientseqs.insert(ClientId,Seq+1);
+                    self.clientseqs.insert(id,seq+1);
                     return "OK".to_string();
                 },
                 Some(i) => {
-                    if Seq >= i {
-                        self.clientseqs.insert(ClientId,Seq+1);
+                    if seq >= i {
+                        self.clientseqs.insert(id,seq+1);
                         return "OK".to_string();
                     } else {
                         return "repeat".to_string();
@@ -43,51 +43,51 @@ impl KvServer {
         }
     }
 
-    pub fn StartKVServer(&mut self){
+    pub fn start_kv_server(&mut self){
         let own = self.rpcserver.add_service(0);
         loop {
             let reqmsg = own.receiver.recv().unwrap();
             if reqmsg.methodname == String::from("Put") {
-                let Putargs: PutAppendArgs = serde_json::from_str(&reqmsg.args).unwrap();
-                println!("put info : {:#?}",Putargs);
+                let put_args: PutAppendArgs = serde_json::from_str(&reqmsg.args).unwrap();
+                println!("put info : {:#?}",put_args);
                 
-                let ready = self.StartCommand(Putargs.id.clone(),&Putargs.seq);
-                let mut Putreply = PutAppendReply{
+                let ready = self.start_command(put_args.id.clone(),&put_args.seq);
+                let mut put_reply = PutAppendReply{
                     wrong_leader:false,
                     err: String::from("OK"),
                 };
                 
                 if ready == "OK".to_string() {
-                    let res = self.raftnote.put_value(Putargs.key.clone(),Putargs.value.clone());
+                    let res = self.raftnote.put_value(put_args.key.clone(),put_args.value.clone());
                 }  else if ready == String::from("WrongLeader") {
-                    Putreply.wrong_leader = true;
+                    put_reply.wrong_leader = true;
                 } else {}
-                let putreply = serde_json::to_string(&Putreply).unwrap();
+                let putreply = serde_json::to_string(&put_reply).unwrap();
                 let putreply = Replymsg{
                     ok: true,
                     reply:putreply,
                 };
                 own.sender.send(putreply).unwrap();
             } else if reqmsg.methodname == String::from("Get"){
-                let Getargs: GetArgs = serde_json::from_str(&reqmsg.args).unwrap();
-                println!("get info : {:#?}",Getargs);
+                let get_args: GetArgs = serde_json::from_str(&reqmsg.args).unwrap();
+                println!("get info : {:#?}",get_args);
 
-                let ready = self.StartCommand(Getargs.id.clone(),&Getargs.seq);
+                let ready = self.start_command(get_args.id.clone(),&get_args.seq);
                 
-                let mut Getreply = GetReply{
+                let mut get_reply = GetReply{
                     wrong_leader: false,
                     err: String::from("OK"),
                     value:String::from(""),
                 };
 
                 if ready == "OK".to_string() {
-                    let res = self.raftnote.get_value(Getargs.key.clone());
-                    Getreply.value=res.clone();
+                    let res = self.raftnote.get_value(get_args.key.clone());
+                    get_reply.value=res.clone();
                 }  else if ready == String::from("WrongLeader") {
-                    Getreply.wrong_leader = true;
+                    get_reply.wrong_leader = true;
                 } else {}
 
-                let getreply = serde_json::to_string(&Getreply).unwrap();
+                let getreply = serde_json::to_string(&get_reply).unwrap();
                 let getreply = Replymsg{
                     ok: true,
                     reply:getreply,

@@ -428,7 +428,7 @@ impl Raft {
     }
 
     fn handle_append_log(&mut self, reqmsg: Reqmsg) ->AppendEntryReply {
-        let mut arg: AppendEntryArg = serde_json::from_str(&reqmsg.args).unwrap();
+        let arg: AppendEntryArg = serde_json::from_str(&reqmsg.args).unwrap();
         let last_index = self.raft_logs.len() - 1;
         let mut success = false;
         // 任期不一致//

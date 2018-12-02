@@ -116,10 +116,10 @@ pub fn test_kv_server(args: &[String]) {
         println!("Try use cargo run 127.0.0.1 8080");
         return ;
     }
-    let mut arg = &args[1];
-    let ip: String = arg.to_string();
-    arg = &args[2];
+    let arg = &args[2];
+    //let ip: String = arg.to_string();
+    //arg = &args[2];
     let port_num: u16 = arg.trim().parse().unwrap();
     let mut kv_server = KvServer::new(port_num + 1, port_num);
-    kv_server.StartKVServer();
+    kv_server.start_kv_server();
 }
