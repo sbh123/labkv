@@ -90,6 +90,7 @@ pub struct RaftServer {
 impl RaftServer {
     pub fn new(serverip: String, rpcport: u16) -> RaftServer {
         let serverid = format!("Raft:{}", rpcport);
+        let serverip = format!("{}:{}", serverip, rpcport);
         let mut servers: HashMap<String, String>;
         let (ok, reply) = rpc_call("127.0.0.1:8060".to_string(), 
                 "PD.GetServers".to_string(), "".to_string());
