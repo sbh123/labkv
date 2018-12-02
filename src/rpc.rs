@@ -363,7 +363,7 @@ pub fn test_rpc_client() {
         rpc_call("127.0.0.1:8080".to_string(), "Raft.Append".to_string(), args);
         let mut args = String::new();
         for i in 0..4096 {
-            for j in 0..4 {
+            for j in 0..8 {
                 args += &format!("[{}:{}]", i, j);
             }
         }
