@@ -148,10 +148,11 @@ pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Rep
             },
         };
         let reqmsg = format!("{}{}", methodname.to_arg(), args.to_arg());
+        let reqmsg = reqmsg.to_arg();
         kv_info!("Call req msg is {}", reqmsg);
         let mut written = 0;
         while written < reqmsg.len() {
-            let deadline = cmp::max(reqmsg.len(), written + 4096);
+            let deadline = cmp::min(reqmsg.len(), written + 4096);
             let size = stream.write(reqmsg[written..deadline].as_bytes()).unwrap();
             written += size;
             kv_debug!("Write at one time for {} bytes", size);
@@ -171,14 +172,22 @@ impl RpcServer {
             let listener = TcpListener::bind(address).unwrap();
             for stream in listener.incoming() {
                 let mut stream = stream.unwrap();
+                let mut len = [0; 10];
+                let size = stream.read(&mut len).unwrap();
+                if size < 10 {
+                    kv_note!("Received a wrong reqmsg");
+                    continue;
+                }
+                let len: usize = String::from_utf8_lossy(&len[..size]).parse().unwrap();
+                kv_debug!("Need to read {} bytes", len);
                 let mut buffer = [0; 4096];
                 let mut reqmsg = String::new();
-                loop {
+                let mut read = 0;
+                while read < len {
                     let size = stream.read(&mut buffer).unwrap();
-                    if size < 4096 {
-                        break;
-                    }
+                    kv_debug!("Read {} bytes", size);
                     reqmsg += &String::from_utf8_lossy(&buffer[..size]);
+                    read += size;
                 }
                 kv_debug!("Reqmsg is {} bytes", reqmsg.len());
                 kv_info!("recived reqmsg is: {}", reqmsg);
