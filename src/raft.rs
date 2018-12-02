@@ -477,6 +477,7 @@ impl Raft {
         } 
 
         if success == true{
+            kv_debug!("Last log index is {}", self.last_logindex);
             for log in arg.entries {
                 let op = log.command.op;
                 let key = log.command.key;
