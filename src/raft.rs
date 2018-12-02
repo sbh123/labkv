@@ -457,7 +457,11 @@ impl Raft {
         } else if arg.prev_log_index == self.raft_logs[last_index].index {
             if arg.prev_log_term == self.raft_logs[last_index].term {
                 self.raft_logs.append(&mut arg.entries);
+                kv_debug!("Last log index is {}:{}",
+                    self.last_logindex, arg.entries.len());
                 self.last_logindex += arg.entries.len();
+                kv_debug!("Last log index is {}:{}",
+                    self.last_logindex, arg.entries.len());
                 success = true;
             } else {
                 self.raft_logs.truncate(arg.prev_log_index);
@@ -468,7 +472,11 @@ impl Raft {
                 self.raft_logs.truncate(arg.prev_log_index + 1);
                 self.last_logindex = arg.prev_log_index;
                 self.raft_logs.append(&mut arg.entries);
+                kv_debug!("Last log index is {}:{}",
+                    self.last_logindex, arg.entries.len());
                 self.last_logindex += arg.entries.len();
+                kv_debug!("Last log index is {}:{}",
+                    self.last_logindex, arg.entries.len());
                 success = true;
             } else {
                 self.raft_logs.truncate(arg.prev_log_index);
@@ -477,7 +485,8 @@ impl Raft {
         } 
 
         if success == true{
-            kv_debug!("Last log index is {}", self.last_logindex);
+            kv_debug!("Last log index is {}:{}",
+                 self.last_logindex, arg.entries.len());
             for log in arg.entries {
                 let op = log.command.op;
                 let key = log.command.key;
