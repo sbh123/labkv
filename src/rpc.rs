@@ -122,12 +122,39 @@ pub struct RpcServer {
 }
 
 fn handle_reply(mut stream: TcpStream) ->Replymsg {
+    let mut len = [0; 10];
+    let size = match stream.read(&mut len) {
+        Ok(size) => size,
+        Err(_) => {
+            return Replymsg {
+                ok: false,
+                reply: "Wrong reply".to_string(),};
+            },
+    };
+    if size < 10 {
+        kv_note!("Received a wrong reply");
+        return Replymsg {
+            ok: false,
+            reply: "Wrong reply".to_string(),
+        };
+    }
+    let len: usize = String::from_utf8_lossy(&len[..size]).parse().unwrap();
+    kv_debug!("Need to read {} bytes", len);
     let mut buffer = [0; 4096];
     let mut replymsg = String::new();
-    let mut size: usize = 4096;
-    while size == 4096 {
-        size = stream.read(&mut buffer).unwrap();
+    let mut read = 0;
+    while read < len {
+        let size = match stream.read(&mut buffer) {
+            Ok(size) => size,
+            Err(_) => {
+                return Replymsg {
+                    ok: false,
+                    reply: "Wrong reply".to_string(),};
+             },
+        };
+        kv_debug!("Read {} bytes", size);
         replymsg += &String::from_utf8_lossy(&buffer[..size]);
+        read += size;
     }
     kv_info!("reply is: {}", replymsg);
     let reply = Replymsg::string_to_reply(replymsg);
@@ -153,18 +180,31 @@ pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Rep
         let mut written = 0;
         while written < reqmsg.len() {
             let deadline = cmp::min(reqmsg.len(), written + 4096);
-            let size = stream.write(reqmsg[written..deadline].as_bytes()).unwrap();
+            let size = match stream.write(reqmsg[written..deadline].as_bytes()) {
+                Ok(size) => size,
+                Err(_) =>{
+                    return (false, Replymsg{
+                        ok: false,
+                        reply: "Connect failed".to_string(),
+                    });
+                },
+            };
             written += size;
             kv_debug!("Write at one time for {} bytes", size);
         }
-        stream.flush().unwrap();
+        match stream.flush(){
+            Ok(_) => {},
+            Err(err) => {
+                kv_note!("{}", err);
+            },
+        };
         thread::sleep(Duration::from_millis(100));
         let reply = handle_reply(stream);
         (true, reply)
 }
 
 impl RpcServer {
-    pub fn new(servername: String, port: u16) ->RpcServer{
+    pub fn new(servername: String, port: u16) -> RpcServer{
         let service_pool = Arc::new(Mutex::new(ServicePool::new(4)));
         let services = Arc::clone(&service_pool);
         let listen_thread = thread::spawn(move ||{
@@ -174,7 +214,12 @@ impl RpcServer {
             for stream in listener.incoming() {
                 let mut stream = stream.unwrap();
                 let mut len = [0; 10];
-                let size = stream.read(&mut len).unwrap();
+                let size = match stream.read(&mut len) {
+                    Ok(size) => size,
+                    Err(_) => {
+                        continue;
+                    },
+                };
                 if size < 10 {
                     kv_note!("Received a wrong reqmsg");
                     continue;
@@ -185,10 +230,19 @@ impl RpcServer {
                 let mut reqmsg = String::new();
                 let mut read = 0;
                 while read < len {
-                    let size = stream.read(&mut buffer).unwrap();
+                    let size = match stream.read(&mut buffer) {
+                        Ok(size) => size,
+                        Err(err) => {
+                            kv_note!("{}", err);
+                            break;
+                        },
+                    };
                     kv_debug!("Read {} bytes", size);
                     reqmsg += &String::from_utf8_lossy(&buffer[..size]);
                     read += size;
+                }
+                if read < len {
+                    continue;
                 }
                 kv_debug!("Reqmsg is {} bytes", reqmsg.len());
                 kv_info!("recived reqmsg is: {}", reqmsg);
@@ -312,9 +366,30 @@ impl Service {
                         msgchannel.sender.send(job.reqmsg).unwrap();
                         let reply = msgchannel.receiver.recv().unwrap();
                         let replymsg = format!("{}{}", reply.ok.to_arg(), 
-                                    reply.reply.to_arg());
-                        job.stream.write(replymsg.as_bytes()).unwrap();
-                        job.stream.flush().unwrap();
+                                    reply.reply.to_arg()).to_arg();
+                        let mut written = 0;
+                        while written < replymsg.len() {
+                            let deadline = cmp::min(replymsg.len(), written + 4096);
+                            let size = match job.stream.write(replymsg[written..deadline].as_bytes()) {
+                                Ok(size) => size,
+                                Err(err) => {
+                                    kv_note!("{}", err);
+                                    break;
+                                },
+                            };
+                            written += size;
+                            kv_debug!("Write at one time for {} bytes", size);
+                        }
+
+
+
+
+                        match job.stream.flush(){
+                            Ok(_) => {},
+                            Err(err) => {
+                                kv_note!("{}", err);
+                            },
+                        };
                     },
                     Message::Terminate => {
                         kv_info!("Service {} was told to terminate.", id);
