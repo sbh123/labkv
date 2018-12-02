@@ -397,6 +397,9 @@ impl Raft {
                 } else {
                     servers.lock().unwrap().insert(
                         serverinfo.serverid, serverinfo.serverip);
+                    let mut raft = raft.lock().unwrap();
+                    let next_index = raft.last_logindex + 1;
+                    raft.next_index.insert(serverip.to_string(), next_index);
                 }
                 reply = Replymsg {
                     ok: true,
