@@ -173,6 +173,13 @@ impl RaftServer {
         true
     }
 
+    pub fn is_leader(&self) ->bool {
+        match self.raft.lock().unwrap().state {
+            RaftState::Leader => true,
+            _ => false,
+        }
+    }
+
 }
 
 pub struct Raft {
