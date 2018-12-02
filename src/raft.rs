@@ -103,6 +103,12 @@ impl RaftServer {
                 servers = serde_json::from_str(&reply.reply).unwrap();
             }
         }
+        let serverinfo = ServerInfo {
+            serverid: serverid.clone(),
+            serverip: serverip.clone(),
+        };
+        rpc_call("127.0.0.1:8060".to_string(), "PD.AddServers".to_string(), 
+                serde_json::to_string(&serverinfo).unwrap());
         servers.remove(&serverid);
         let servers = Arc::new(Mutex::new(servers));
         let server = RpcServer::new("raft".to_string(), rpcport);
@@ -112,12 +118,6 @@ impl RaftServer {
         Raft::add_timeout(Arc::clone(&raft), Arc::clone(&servers), receiver);
         Raft::add_timer(Arc::clone(&raft), Arc::clone(&servers));
         Raft::add_service(Arc::clone(&raft), 0, Arc::clone(&servers));
-        let serverinfo = ServerInfo {
-            serverid,
-            serverip: serverip,
-        };
-        rpc_call("127.0.0.1:8060".to_string(), "PD.AddServers".to_string(), 
-                serde_json::to_string(&serverinfo).unwrap());
         RaftServer { servers, raft }
     }
 
@@ -408,7 +408,7 @@ impl Raft {
                 reply = raft.handle_reqmsg(reqmsg);
             }
             own.sender.send(reply).unwrap();
-            kv_info!("finished listen");
+            kv_debug!("finished listen");
         });
     }
 
