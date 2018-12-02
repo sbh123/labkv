@@ -149,7 +149,10 @@ impl RaftServer {
     }
 
     pub fn get_value(&self, key: String) -> String {
-        self.raft.lock().unwrap().data.get(&key).unwrap().to_string()
+        match self.raft.lock().unwrap().data.get(&key) {
+            Some(value) =>value.to_string(),
+            None => "".to_string(),
+        }
     }
 
     pub fn delete_value(&self, key: String) -> bool {
