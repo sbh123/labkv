@@ -148,7 +148,12 @@ pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Rep
         };
         let reqmsg = format!("{}{}", methodname.to_arg(), args.to_arg());
         kv_info!("Call req msg is {}", reqmsg);
-        stream.write(reqmsg.as_bytes()).unwrap();
+        let mut written = 0;
+        while written < reqmsg.len() {
+            let size = stream.write(reqmsg[written..].as_bytes()).unwrap();
+            written += size;
+            kv_debug!("Write at one time for {} bytes", size);
+        }
         stream.flush().unwrap();
         thread::sleep(Duration::from_millis(100));
         let reply = handle_reply(stream);
@@ -341,6 +346,13 @@ pub fn test_rpc_client() {
         let arg = "hello world!";
         let args = format!("{0:<0width$}{1}", arg.len(), 
                     arg, width = 10);
+        rpc_call("127.0.0.1:8080".to_string(), "Raft.Append".to_string(), args);
+        let mut args = String::new();
+        for i in 0..4096 {
+            for j in 0..4096 {
+                args += &format!("[{}:{}]", i, j);
+            }
+        }
         rpc_call("127.0.0.1:8080".to_string(), "Raft.Append".to_string(), args);
     }
 }
