@@ -152,6 +152,7 @@ fn handle_reply(mut stream: TcpStream) ->Replymsg {
                     reply: "Wrong reply".to_string(),};
              },
         };
+        kv_debug!("Read {}", String::from_utf8_lossy(&buffer[..size]));
         kv_debug!("Read {} bytes", size);
         replymsg += &String::from_utf8_lossy(&buffer[..size]);
         read += size;
@@ -368,6 +369,7 @@ impl Service {
                         let replymsg = format!("{}{}", reply.ok.to_arg(), 
                                     reply.reply.to_arg()).to_arg();
                         let mut written = 0;
+                        kv_debug!("Write reply is {}", replymsg);
                         while written < replymsg.len() {
                             let deadline = cmp::min(replymsg.len(), written + 4096);
                             let size = match job.stream.write(replymsg[written..deadline].as_bytes()) {
