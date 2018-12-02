@@ -687,6 +687,7 @@ impl Raft {
             for thread in threads {
                 thread.join().unwrap();   
             }
+            kv_debug!("Finished once send append log");
             let passed = *passed.lock().unwrap(); 
             if passed + 1 > servers.len() / 2 {
                 let mut raft = raft.lock().unwrap();
