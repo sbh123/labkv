@@ -12,7 +12,7 @@ fn main() {
     println!("Hello, world!");
     let args: Vec<String> = env::args().collect();
     //test_rpc_server();
-    test_raft(&args);
+    test_kv_server(&args);
 }
 
 
