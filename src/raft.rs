@@ -665,6 +665,7 @@ impl Raft {
             {
                 let raft = raft.lock().unwrap();
                 to_commit = raft.last_logindex + 1;
+                kv_debug!("Start once send append log {}", to_commit);
             }
             let mut threads = vec![];
             for (_, serverip) in servers.iter() {
