@@ -4,7 +4,7 @@ extern crate serde;
 extern crate serde_json;
 
 use std::env;
-use labkv::rpc::*;
+//use labkv::rpc::*;
 //use labkv::raft::*;
 use labkv::mytest::*;
 
