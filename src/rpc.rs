@@ -7,6 +7,7 @@ use std::thread;
 use std::time::{Duration};
 use std::io::prelude::*;
 use std::fmt;
+use std::cmp;
 // use super::config;
 
 #[derive(Debug)]
@@ -150,7 +151,8 @@ pub fn rpc_call(serverip: String, methodname: String, args: String) ->(bool, Rep
         kv_info!("Call req msg is {}", reqmsg);
         let mut written = 0;
         while written < reqmsg.len() {
-            let size = stream.write(reqmsg[written..].as_bytes()).unwrap();
+            let deadline = cmp::max(reqmsg.len(), written + 4096);
+            let size = stream.write(reqmsg[written..deadline].as_bytes()).unwrap();
             written += size;
             kv_debug!("Write at one time for {} bytes", size);
         }
@@ -171,11 +173,14 @@ impl RpcServer {
                 let mut stream = stream.unwrap();
                 let mut buffer = [0; 4096];
                 let mut reqmsg = String::new();
-                let mut size: usize = 4096;
-                while size == 4096 {
-                    size = stream.read(&mut buffer).unwrap();
+                loop {
+                    let size = stream.read(&mut buffer).unwrap();
+                    if size < 4096 {
+                        break;
+                    }
                     reqmsg += &String::from_utf8_lossy(&buffer[..size]);
                 }
+                kv_debug!("Reqmsg is {} bytes", reqmsg.len());
                 kv_info!("recived reqmsg is: {}", reqmsg);
                 let reqmsg = Reqmsg::string_to_req(reqmsg);
                 let services = services.lock().unwrap();
@@ -349,7 +354,7 @@ pub fn test_rpc_client() {
         rpc_call("127.0.0.1:8080".to_string(), "Raft.Append".to_string(), args);
         let mut args = String::new();
         for i in 0..4096 {
-            for j in 0..16 {
+            for j in 0..4 {
                 args += &format!("[{}:{}]", i, j);
             }
         }
