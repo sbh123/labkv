@@ -120,7 +120,6 @@ pub fn test_kv_server(args: &[String]) {
     let ip: String = arg.to_string();
     arg = &args[2];
     let port_num: u16 = arg.trim().parse().unwrap();
-    let raftserver = RaftServer::new(ip, port_num);
-    let mut kv_server = KvServer::new(port_num, port_num + 1);
+    let mut kv_server = KvServer::new(port_num + 1, port_num);
     kv_server.StartKVServer();
 }
