@@ -483,6 +483,7 @@ impl Raft {
                 let value = log.command.value;
                 match op{
                     1 => {
+                        println!("{:?}", self.data);
                         self.data.insert(key, value);
                     },
                     2 =>{
@@ -723,6 +724,7 @@ impl Raft {
                     let value = log.command.value;
                     match op{
                         1 => {
+                            println!("{:?}", raft.data);
                             raft.data.insert(key, value);
                         },
                         2 => {
