@@ -49,7 +49,7 @@ impl KvServer {
             let reqmsg = own.receiver.recv().unwrap();
             if reqmsg.methodname == String::from("Put") {
                 let put_args: PutAppendArgs = serde_json::from_str(&reqmsg.args).unwrap();
-                kv_note!("put info : {:#?}",put_args);
+                kv_debug!("put info : {:#?}",put_args);
                 
                 let ready = self.start_command(put_args.id.clone(),&put_args.seq);
                 let mut put_reply = PutAppendReply{
@@ -70,7 +70,7 @@ impl KvServer {
                 own.sender.send(putreply).unwrap();
             } else if reqmsg.methodname == String::from("Get"){
                 let get_args: GetArgs = serde_json::from_str(&reqmsg.args).unwrap();
-                kv_note!("get info : {:#?}",get_args);
+                kv_debug!("get info : {:#?}",get_args);
 
                 let ready = self.start_command(get_args.id.clone(),&get_args.seq);
                 

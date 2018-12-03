@@ -396,7 +396,7 @@ impl Raft {
         let raft = Arc::clone(&raft);
         thread::spawn(move || loop {
             let reqmsg = own.receiver.recv().unwrap();
-            kv_info!("at service thread");
+            kv_note!("Recived a Reqmsg");
             reqmsg.print_req();
             let reply;
             if reqmsg.methodname == "AddServer".to_string() {
@@ -424,8 +424,8 @@ impl Raft {
                 kv_info!("at raft locked");
                 reply = raft.handle_reqmsg(reqmsg);
             }
+            kv_note!("Finished handle Reqmsg");
             own.sender.send(reply).unwrap();
-            kv_debug!("finished listen");
         });
     }
 
@@ -496,7 +496,7 @@ impl Raft {
                 let value = log.command.value;
                 match op{
                     1 => {
-                        println!("{:?}", self.data);
+                        kv_debug!("{:?}", self.data);
                         self.data.insert(key, value);
                     },
                     2 =>{
@@ -740,7 +740,7 @@ impl Raft {
                     let value = log.command.value;
                     match op{
                         1 => {
-                            println!("{:?}", raft.data);
+                            kv_debug!("{:?}", raft.data);
                             raft.data.insert(key, value);
                         },
                         2 => {

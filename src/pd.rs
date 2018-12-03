@@ -24,6 +24,7 @@ pub struct PD {
 
 impl ServerInfos {
     fn handle_req(&mut self, reqmsg: Reqmsg) -> Replymsg {
+        kv_note!("PD req: {:?}", reqmsg);
         if reqmsg.methodname == "GetServers".to_string() {
             let replymsg = serde_json::to_string(&self.servers).unwrap();
             return Replymsg {
